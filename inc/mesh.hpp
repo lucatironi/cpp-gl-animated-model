@@ -54,6 +54,8 @@ public:
         textures.push_back(texture);
     }
 
+    std::vector<Texture> GetTextures() const { return textures; }
+
 private:
     GLuint VAO, VBO, EBO; // Vertex Array Object, Vertex Buffer Object, Element Buffer Object
     std::vector<Vertex> vertices;

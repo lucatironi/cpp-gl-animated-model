@@ -112,8 +112,8 @@ int main()
 
     Floor = std::make_shared<PlaneModel>("assets/texture_05.png", Settings.WorldSize);
     Cube = std::make_shared<CubeModel>("assets/texture_05.png");
-    AnimatedModel = std::make_unique<SkinnedModel>("assets/Mike.gltf");
     glm::mat4 translationMatrix, rotationMatrix, scaleMatrix, modelMatrix;
+    AnimatedModel = std::make_unique<SkinnedModel>("assets/vanguard.glb");
 
     Camera.Position = glm::vec3(0.0f, 2.0f, 2.0f);
     Camera.FOV = Settings.FOV;

@@ -65,6 +65,7 @@ public:
     {
         if (hasAnimations && animation >= 0 && animation < numAnimations)
             currentAnimation = animation;
+            setAnimParams();
     }
 
     void SetBoneTransformations(Shader shader, float currentTime)
@@ -115,7 +116,7 @@ private:
     {
         Assimp::Importer importer;
         const aiScene* pScene = importer.ReadFile(path,
-            aiProcessPreset_TargetRealtime_Fast | aiProcess_GlobalScale | aiProcess_LimitBoneWeights | aiProcess_FlipUVs);
+            aiProcessPreset_TargetRealtime_Fast | aiProcess_LimitBoneWeights | aiProcess_FlipUVs);
 
         if (!pScene || (pScene->mFlags & AI_SCENE_FLAGS_INCOMPLETE) || !pScene->mRootNode)
             throw std::runtime_error("ERROR::ASSIMP: " + std::string(importer.GetErrorString()));
@@ -125,27 +126,25 @@ private:
         hasAnimations = scene->HasAnimations();
         numAnimations = scene->mNumAnimations;
         globalInverseTransform = glm::inverse(GetGLMMat4(scene->mRootNode->mTransformation));
-        ticksPerSecond = (float)(scene->mAnimations[currentAnimation]->mTicksPerSecond != 0.0
-                            ? scene->mAnimations[currentAnimation]->mTicksPerSecond : 25.0f);
-        animDuration = (float)scene->mAnimations[currentAnimation]->mDuration;
-
         boneMatrices.reserve(100);
-
         processNode(scene->mRootNode);
+        setAnimParams();
 
         std::cout << "Loaded model \"" << path
                   << "\", hasAnimations: " << (hasAnimations ? "yes" : "no")
-                  << ", ticksPerSecond: " << ticksPerSecond
                   << ", numAnimations: " << numAnimations
                   << ", bonesCount: " << bonesCount
                   << ", meshes: " << meshes.size()
                   << std::endl;
 
-        for (const auto& pair : boneMapping)
+        for (const auto& mesh : meshes)
+            for (const auto& texture : mesh.GetTextures())
+                std::cout << "Texture: " << texture.path << ", type: " << texture.type << std::endl;
+
+        for (unsigned int i = 0; i < numAnimations; ++i)
         {
-            std::cout << "Bone: " << pair.first
-                      << ", id: " << pair.second
-                      << std::endl;
+            aiAnimation* animation = scene->mAnimations[i];
+            std::cout << "Animation: " << animation->mName.C_Str() << std::endl;
         }
     }
 
@@ -174,6 +173,7 @@ private:
                 .TexCoords   = mesh->mTextureCoords[0]
                                 ? glm::vec2(mesh->mTextureCoords[0][i].x, mesh->mTextureCoords[0][i].y)
                                 : glm::vec2(0.0f, 0.0f),
+                .BoneIDs     = glm::ivec4(-1),
                 .BoneWeights = glm::vec4(0.0f) // Bone Weights are initialised in the next for loop
             });
         }
@@ -188,12 +188,12 @@ private:
             {
                 // allocate an index for the new bone
                 boneIndex = bonesCount;
-                bonesCount++;
                 BoneMatrix boneMatrix;
                 boneMatrices.push_back(boneMatrix);
 
                 boneMatrices[boneIndex].BoneOffset = GetGLMMat4(mesh->mBones[i]->mOffsetMatrix);
                 boneMapping[boneName] = boneIndex;
+                bonesCount++;
             }
             else
                 boneIndex = boneMapping[boneName];
@@ -253,9 +253,9 @@ private:
     unsigned int findPosition(float animationTime, const aiNodeAnim* nodeAnim)
     {
         assert(nodeAnim->mNumPositionKeys > 0);
-        for (unsigned int i = 0; i < nodeAnim->mNumPositionKeys - 1; ++i)
-            if (animationTime < (float)nodeAnim->mPositionKeys[i + 1].mTime)
-                return i;
+        for (unsigned int index = 0; index < nodeAnim->mNumPositionKeys - 1; ++index)
+            if (animationTime < (float)nodeAnim->mPositionKeys[index + 1].mTime)
+                return index;
         std::cerr << "Position animationTime is out of bound: " << animationTime << std::endl;
         return 0;
     }
@@ -263,9 +263,9 @@ private:
     unsigned int findRotation(float animationTime, const aiNodeAnim* nodeAnim)
     {
         assert(nodeAnim->mNumRotationKeys > 0);
-        for (unsigned int i = 0; i < nodeAnim->mNumRotationKeys - 1; ++i)
-            if (animationTime < (float)nodeAnim->mRotationKeys[i + 1].mTime)
-                return i;
+        for (unsigned int index = 0; index < nodeAnim->mNumRotationKeys - 1; ++index)
+            if (animationTime < (float)nodeAnim->mRotationKeys[index + 1].mTime)
+                return index;
         std::cerr << "Rotation animationTime is out of bound: " << animationTime << std::endl;
         return 0;
     }
@@ -273,9 +273,9 @@ private:
     unsigned int findScaling(float animationTime, const aiNodeAnim* nodeAnim)
     {
         assert(nodeAnim->mNumScalingKeys > 0);
-        for (unsigned int i = 0; i < nodeAnim->mNumScalingKeys - 1; ++i)
-            if (animationTime < (float)nodeAnim->mScalingKeys[i + 1].mTime)
-                return i;
+        for (unsigned int index = 0; index < nodeAnim->mNumScalingKeys - 1; ++index)
+            if (animationTime < (float)nodeAnim->mScalingKeys[index + 1].mTime)
+                return index;
         std::cerr << "Scaling animationTime is out of bound: " << animationTime << std::endl;
         return 0;
     }
@@ -390,6 +390,13 @@ private:
         }
 
         return nullptr;
+    }
+
+    void setAnimParams()
+    {
+        ticksPerSecond = (float)(scene->mAnimations[currentAnimation]->mTicksPerSecond != 0.0
+                               ? scene->mAnimations[currentAnimation]->mTicksPerSecond : 25.0f);
+        animDuration = (float)scene->mAnimations[currentAnimation]->mDuration;
     }
 
     // Load material textures from Assimp
