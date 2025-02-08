@@ -2,6 +2,7 @@
 #include "assimp/DefaultLogger.hpp"
 #include "cube_model.hpp"
 #include "fps_camera.hpp"
+#include "frustum_box.hpp"
 #include "mesh.hpp"
 #include "model.hpp"
 #include "plane_model.hpp"
@@ -21,14 +22,16 @@ void KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
 void CursorPosCallback(GLFWwindow* window, double xposIn, double yposIn);
 
 void ProcessInput(GLFWwindow* window, float deltaTime);
+void Render(const Shader& shader, float currentTime);
+
+void RenderQuad();
+std::vector<glm::vec3> GetFrustumCornersWorldSpace(const glm::mat4& viewProjMatrix);
+glm::mat4 CalcLightSpaceMatrix(const glm::vec3& worldMin, const glm::vec3& worldMax);
 
 FPSCamera Camera;
 std::shared_ptr<CubeModel> Cube;
 std::shared_ptr<PlaneModel> Floor;
 std::unique_ptr<SkinnedModel> AnimatedModel;
-unsigned int CurrentAnimation = 0;
-
-bool Animate = false;
 
 bool FirstMouse = true;
 float LastX, LastY;
@@ -42,13 +45,17 @@ struct Settings
     int WindowPositionY = 0;
     bool FullScreen = false;
     float FOV = 75.0f;
-    float WorldSize = 100.0f;
+    float WorldSize = 10.0f;
     glm::vec3 LightDir = glm::normalize(glm::vec3(0.5f, 1.0f, 1.0f));
     glm::vec3 LightColor = glm::vec3(1.0f, 1.0f, 0.8f);
     glm::vec3 AmbientColor = glm::vec3(1.0f, 1.0f, 1.0f);
     float AmbientIntensity = 0.5f;
     float SpecularShininess = 32.0f;
     float SpecularIntensity = 0.5;
+    bool DebugShadow = false;
+    bool DebugFrustum = false;
+    bool Animate = true;
+    unsigned int CurrentAnimation = 1;
 } Settings;
 
 int main()
@@ -112,22 +119,71 @@ int main()
 
     Floor = std::make_shared<PlaneModel>("assets/texture_05.png", Settings.WorldSize);
     Cube = std::make_shared<CubeModel>("assets/texture_05.png");
-    glm::mat4 translationMatrix, rotationMatrix, scaleMatrix, modelMatrix;
     AnimatedModel = std::make_unique<SkinnedModel>("assets/vanguard.glb");
+    AnimatedModel->SetAnimation(Settings.CurrentAnimation);
 
     Camera.Position = glm::vec3(0.0f, 2.0f, 2.0f);
     Camera.FOV = Settings.FOV;
     Camera.AspectRatio = static_cast<GLfloat>(Settings.WindowWidth) / static_cast<GLfloat>(Settings.WindowHeight);
 
+    glm::vec3 worldMin(-Settings.WorldSize / 2.0f, 0.0f, -Settings.WorldSize / 2.0f);
+    glm::vec3 worldMax(Settings.WorldSize / 2.0f, Settings.WorldSize / 2.0f, Settings.WorldSize / 2.0f);
+    glm::mat4 lightViewSpaceMatrix = CalcLightSpaceMatrix(worldMin, worldMax);
+    std::vector<glm::vec3> worldFrustumCorners = {
+        { worldMin.x, worldMin.y, worldMin.z }, { worldMax.x, worldMin.y, worldMin.z },
+        { worldMin.x, worldMax.y, worldMin.z }, { worldMax.x, worldMax.y, worldMin.z },
+        { worldMin.x, worldMin.y, worldMax.z }, { worldMax.x, worldMin.y, worldMax.z },
+        { worldMin.x, worldMax.y, worldMax.z }, { worldMax.x, worldMax.y, worldMax.z }
+    };
+    FrustumBox lightSpaceFrustum(GetFrustumCornersWorldSpace(lightViewSpaceMatrix), glm::vec3(1.0f, 1.0f, 0.0f));
+    FrustumBox worldFrustum(worldFrustumCorners, glm::vec3(1.0f, 0.0f, 0.0f));
+
     Shader defaultShader("shaders/default.vs", "shaders/default.fs");
     defaultShader.Use();
     defaultShader.SetMat4("projection", Camera.GetProjectionMatrix());
+    defaultShader.SetMat4("lightSpaceMatrix", lightViewSpaceMatrix);
     defaultShader.SetVec3("lightDir", Settings.LightDir);
     defaultShader.SetVec3("lightColor", Settings.LightColor);
     defaultShader.SetVec3("ambientColor", Settings.AmbientColor);
     defaultShader.SetFloat("ambientIntensity", Settings.AmbientIntensity);
     defaultShader.SetFloat("specularShininess", Settings.SpecularShininess);
     defaultShader.SetFloat("specularIntensity", Settings.SpecularIntensity);
+    defaultShader.SetInt("depthMap", 3);
+
+    Shader shadowShader("shaders/default.vs", "shaders/shadow.fs");
+    shadowShader.Use();
+    shadowShader.SetMat4("lightSpaceMatrix", lightViewSpaceMatrix);
+
+    Shader debugShader("shaders/render_to_quad.vs", "shaders/debug_shadows.fs");
+    debugShader.Use();
+    debugShader.SetInt("depthMap", 0);
+
+    Shader lineShader("shaders/line.vs", "shaders/line.fs");
+    lineShader.Use();
+    lineShader.SetMat4("projection", Camera.GetProjectionMatrix());
+
+    // configure depth map FBO
+    // -----------------------
+    const unsigned int SHADOW_WIDTH = 2048, SHADOW_HEIGHT = 2048;
+    unsigned int depthMapFBO;
+    glGenFramebuffers(1, &depthMapFBO);
+    // create depth texture
+    unsigned int depthMap;
+    glGenTextures(1, &depthMap);
+    glBindTexture(GL_TEXTURE_2D, depthMap);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, SHADOW_WIDTH, SHADOW_HEIGHT, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    float borderColor[] = { 1.0f, 1.0f, 1.0f, 1.0f };
+    glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
+    // attach depth texture as FBO's depth buffer
+    glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthMap, 0);
+    glDrawBuffer(GL_NONE);
+    glReadBuffer(GL_NONE);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
     // setup OpenGL
     glEnable(GL_DEPTH_TEST);
@@ -170,27 +226,51 @@ int main()
         glClearColor(0.2f, 0.3f, 0.4f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        defaultShader.Use();
-        defaultShader.SetMat4("view", Camera.GetViewMatrix());
-        defaultShader.SetVec3("cameraPos", Camera.Position);
+        // 1. render depth of scene to texture (from light's perspective)
+        // --------------------------------------------------------------
+        glViewport(0, 0, SHADOW_WIDTH, SHADOW_HEIGHT);
+        glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
+            glClear(GL_DEPTH_BUFFER_BIT);
+            glCullFace(GL_FRONT);
+            shadowShader.Use();
+            shadowShader.SetBool("shadowPass", true);
+            Render(shadowShader, currentTime);
+            glCullFace(GL_BACK);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-        defaultShader.SetMat4("model", glm::mat4(1.0f));
-        Floor->Draw(defaultShader);
+        // reset viewport
+        glViewport(0, 0, Settings.WindowWidth, Settings.WindowHeight);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        translationMatrix = glm::translate(glm::mat4(1.0f), glm::vec3(1.0f, 0.5f, 1.0f));
-        rotationMatrix = glm::mat4(1.0f);
-        scaleMatrix = glm::scale(glm::mat4(1.0f), glm::vec3(1.0f));
-        modelMatrix = translationMatrix * rotationMatrix * scaleMatrix;
-        defaultShader.SetMat4("model", modelMatrix);
-        Cube->Draw(defaultShader);
+        // 2. render scene as normal using the generated depth/shadow map
+        // --------------------------------------------------------------
+        if (Settings.DebugShadow)
+        {
+            debugShader.Use();
+            debugShader.SetFloat("nearPlane", Camera.NearPlane);
+            debugShader.SetFloat("farPlane", Camera.FarPlane);
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, depthMap);
+            RenderQuad();
+        }
+        else
+        {
+            defaultShader.Use();
+            defaultShader.SetMat4("view", Camera.GetViewMatrix());
+            defaultShader.SetVec3("cameraPos", Camera.Position);
+            shadowShader.SetBool("shadowPass", false);
+            glActiveTexture(GL_TEXTURE3);
+            glBindTexture(GL_TEXTURE_2D, depthMap);
+            Render(defaultShader, currentTime);
+        }
 
-        translationMatrix = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -1.0f));
-        rotationMatrix = glm::rotate(glm::mat4(1.0f), glm::radians(0.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-        scaleMatrix = glm::scale(glm::mat4(1.0f), glm::vec3(0.5f));
-        modelMatrix = translationMatrix * rotationMatrix * scaleMatrix;
-        defaultShader.SetMat4("model", modelMatrix);
-        AnimatedModel->SetBoneTransformations(defaultShader, Animate ? currentTime : 0.0f);
-        AnimatedModel->Draw(defaultShader);
+        if (Settings.DebugFrustum)
+        {
+            lineShader.Use();
+            lineShader.SetMat4("view", Camera.GetViewMatrix());
+            lightSpaceFrustum.Draw(lineShader);
+            worldFrustum.Draw(lineShader);
+        }
 
         // display FPS in window title
         glfwSetWindowTitle(window, (Settings.WindowTitle + " - FPS: " + std::to_string(fps)).c_str());
@@ -230,14 +310,17 @@ void KeyCallback(GLFWwindow* window, int key, int /* scancode */, int action, in
 {
     if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
         glfwSetWindowShouldClose(window, true);
-    if (key == GLFW_KEY_P && action == GLFW_PRESS)
-        Animate = !Animate;
-    if (key == GLFW_KEY_SPACE && action == GLFW_PRESS)
+    else if (key == GLFW_KEY_SPACE && action == GLFW_PRESS)
     {
-        CurrentAnimation = (CurrentAnimation + 1) % AnimatedModel->GetNumAnimations();
-        AnimatedModel->SetAnimation(CurrentAnimation);
-        std::cout << "Current Animation: " << CurrentAnimation << std::endl;
+        Settings.CurrentAnimation = (Settings.CurrentAnimation + 1) % AnimatedModel->GetNumAnimations();
+        AnimatedModel->SetAnimation(Settings.CurrentAnimation);
     }
+    else if (key == GLFW_KEY_P && action == GLFW_PRESS)
+        Settings.Animate = !Settings.Animate;
+    else if (key == GLFW_KEY_O && action == GLFW_PRESS)
+        Settings.DebugShadow = !Settings.DebugShadow;
+    else if (key == GLFW_KEY_F && action == GLFW_PRESS)
+        Settings.DebugFrustum = !Settings.DebugFrustum;
 }
 
 // glfw: whenever the mouse moves, this callback is called
@@ -273,4 +356,124 @@ void ProcessInput(GLFWwindow* window, float deltaTime)
         Camera.Move(MOVE_LEFT, deltaTime);
     if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
         Camera.Move(MOVE_RIGHT, deltaTime);
+}
+
+void Render(const Shader& shader, float currentTime)
+{
+    glm::mat4 translationMatrix, rotationMatrix, scaleMatrix, modelMatrix;
+
+    shader.Use();
+    shader.SetMat4("view", Camera.GetViewMatrix());
+    shader.SetVec3("cameraPos", Camera.Position);
+
+    shader.SetMat4("model", glm::mat4(1.0f));
+    Floor->Draw(shader);
+
+    translationMatrix = glm::translate(glm::mat4(1.0f), glm::vec3(1.0f, 0.5f, 1.0f));
+    rotationMatrix = glm::mat4(1.0f);
+    scaleMatrix = glm::scale(glm::mat4(1.0f), glm::vec3(1.0f));
+    modelMatrix = translationMatrix * rotationMatrix * scaleMatrix;
+    shader.SetMat4("model", modelMatrix);
+    Cube->Draw(shader);
+
+    translationMatrix = glm::translate(glm::mat4(1.0f), glm::vec3(-1.0f, 1.0f, -3.0f));
+    rotationMatrix = glm::mat4(1.0f);
+    scaleMatrix = glm::scale(glm::mat4(1.0f), glm::vec3(2.0f));
+    modelMatrix = translationMatrix * rotationMatrix * scaleMatrix;
+    shader.SetMat4("model", modelMatrix);
+    Cube->Draw(shader);
+
+    translationMatrix = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -1.0f));
+    rotationMatrix = glm::rotate(glm::mat4(1.0f), glm::radians(0.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+    scaleMatrix = glm::scale(glm::mat4(1.0f), glm::vec3(0.01f));
+    modelMatrix = translationMatrix * rotationMatrix * scaleMatrix;
+    shader.SetMat4("model", modelMatrix);
+    AnimatedModel->SetBoneTransformations(shader, Settings.Animate ? currentTime : 0.0f);
+    AnimatedModel->Draw(shader);
+}
+
+unsigned int quadVAO = 0;
+unsigned int quadVBO;
+void RenderQuad()
+{
+    if (quadVAO == 0)
+    {
+        float quadVertices[] = {
+            // positions        texture Coords
+            -1.0f,  1.0f, 0.0f, 0.0f, 1.0f,
+            -1.0f, -1.0f, 0.0f, 0.0f, 0.0f,
+             1.0f,  1.0f, 0.0f, 1.0f, 1.0f,
+             1.0f, -1.0f, 0.0f, 1.0f, 0.0f,
+        };
+        // setup plane VAO
+        glGenVertexArrays(1, &quadVAO);
+        glGenBuffers(1, &quadVBO);
+        glBindVertexArray(quadVAO);
+        glBindBuffer(GL_ARRAY_BUFFER, quadVBO);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), &quadVertices, GL_STATIC_DRAW);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
+    }
+    glBindVertexArray(quadVAO);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    glBindVertexArray(0);
+}
+
+std::vector<glm::vec3> GetFrustumCornersWorldSpace(const glm::mat4& viewProjMatrix)
+{
+    glm::mat4 inv = glm::inverse(viewProjMatrix);
+    // Define the 8 corners in NDC space
+    std::vector<glm::vec4> ndcCorners = {
+        {-1.0f, -1.0f, -1.0f, 1.0f}, // Near Bottom Left
+        { 1.0f, -1.0f, -1.0f, 1.0f}, // Near Bottom Right
+        {-1.0f,  1.0f, -1.0f, 1.0f}, // Near Top Left
+        { 1.0f,  1.0f, -1.0f, 1.0f}, // Near Top Right
+        {-1.0f, -1.0f,  1.0f, 1.0f}, // Far Bottom Left
+        { 1.0f, -1.0f,  1.0f, 1.0f}, // Far Bottom Right
+        {-1.0f,  1.0f,  1.0f, 1.0f}, // Far Top Left
+        { 1.0f,  1.0f,  1.0f, 1.0f}  // Far Top Right
+    };
+
+    // Transform corners to world space
+    std::vector<glm::vec3> worldCorners;
+    for (const auto& ndc : ndcCorners)
+    {
+        glm::vec4 corner = inv * ndc;
+        worldCorners.push_back(glm::vec3(corner / corner.w)); // Perform perspective divide
+    }
+
+    return worldCorners;
+}
+
+glm::mat4 CalcLightSpaceMatrix(const glm::vec3& worldMin, const glm::vec3& worldMax)
+{
+    glm::mat4 lightView = glm::lookAt(Settings.LightDir, glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+    std::vector<glm::vec4> worldCorners = {
+        { worldMin.x, worldMin.y, worldMax.z, 1.0f }, { worldMax.x, worldMin.y, worldMax.z, 1.0f },
+        { worldMax.x, worldMin.y, worldMin.z, 1.0f }, { worldMin.x, worldMin.y, worldMin.z, 1.0f },
+        { worldMin.x, worldMax.y, worldMax.z, 1.0f }, { worldMax.x, worldMax.y, worldMax.z, 1.0f },
+        { worldMax.x, worldMax.y, worldMin.z, 1.0f }, { worldMin.x, worldMax.y, worldMin.z, 1.0f }};
+
+    std::vector<glm::vec4> frustumCornersLightSpace;
+    for (const auto& corner : worldCorners)
+        frustumCornersLightSpace.push_back(lightView * corner);
+
+    glm::vec3 min = glm::vec3(FLT_MAX);
+    glm::vec3 max = glm::vec3(-FLT_MAX);
+    for (const auto& corner : frustumCornersLightSpace)
+    {
+        min = glm::min(min, glm::vec3(corner));
+        max = glm::max(max, glm::vec3(corner));
+    }
+    float zMarginFactor = 0.3f; // Expand by 30% of the range
+    float range = max.z - min.z;
+    min.z -= zMarginFactor * range;
+    max.z += zMarginFactor * range;
+
+    glm::mat4 lightProjection = glm::ortho(min.x, max.x, min.y, max.y, min.z, max.z);
+    glm::mat4 lightSpaceMatrix = lightProjection * lightView;
+
+    return lightSpaceMatrix;
 }

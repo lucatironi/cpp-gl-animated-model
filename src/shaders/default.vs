@@ -9,10 +9,13 @@ layout(location = 4) in vec4 aWeights;
 out vec3 FragPos;
 out vec3 Normal;
 out vec2 TexCoords;
+out vec4 FragPosLightSpace;
 
 uniform mat4 model;
 uniform mat4 view;
 uniform mat4 projection;
+uniform mat4 lightSpaceMatrix;
+uniform bool shadowPass;
 
 uniform bool animated;
 const int MAX_BONES = 100;
@@ -46,6 +49,10 @@ void main()
     FragPos = worldPos.xyz;
     Normal = mat3(transpose(inverse(model))) * aNormal; // Transform normals to world space
     TexCoords = aTexCoords;
+    FragPosLightSpace = lightSpaceMatrix * vec4(FragPos, 1.0);
 
-    gl_Position = projection * view * worldPos;
+    if (shadowPass)
+        gl_Position = lightSpaceMatrix * worldPos;
+    else
+        gl_Position = projection * view * worldPos;
 }
