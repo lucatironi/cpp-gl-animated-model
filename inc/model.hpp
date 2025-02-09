@@ -98,6 +98,7 @@ private:
         }
     };
 
+    Assimp::Importer importer;
     const aiScene* scene;
     std::string directory;
     std::vector<Mesh> meshes;
@@ -114,14 +115,13 @@ private:
 
     void loadModel(const std::string& path)
     {
-        Assimp::Importer importer;
         const aiScene* pScene = importer.ReadFile(path,
             aiProcessPreset_TargetRealtime_Fast | aiProcess_LimitBoneWeights | aiProcess_FlipUVs);
 
         if (!pScene || (pScene->mFlags & AI_SCENE_FLAGS_INCOMPLETE) || !pScene->mRootNode)
             throw std::runtime_error("ERROR::ASSIMP: " + std::string(importer.GetErrorString()));
 
-        scene = importer.GetOrphanedScene();
+        scene = pScene;
         directory = path.substr(0, path.find_last_of("/"));
         hasAnimations = scene->HasAnimations();
         numAnimations = scene->mNumAnimations;
