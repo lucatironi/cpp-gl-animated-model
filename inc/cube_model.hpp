@@ -1,12 +1,11 @@
 #pragma once
 
-#include "mesh.hpp"
-#include "shader.hpp"
+#include "basic_model.hpp"
 
 #include <string>
 #include <vector>
 
-class CubeModel
+class CubeModel : BasicModel
 {
 public:
     CubeModel(const std::string& texturePath)
@@ -14,16 +13,15 @@ public:
         creatMesh(texturePath);
     }
 
-    void Draw(const Shader& shader) const
+    void Draw(const Shader& shader) const override
     {
         shader.Use();
         shader.SetBool("animated", false);
-        mesh->Draw(shader);
+        for (const auto& mesh : meshes)
+            mesh.Draw(shader);
     }
 
 private:
-    std::unique_ptr<Mesh> mesh;
-
     void creatMesh(const std::string& texturePath)
     {
         // Shared data for cube geometry
@@ -80,6 +78,6 @@ private:
         };
 
         // Create the mesh
-        mesh = std::make_unique<Mesh>(vertices, indices, textures);
+        meshes.emplace_back(Mesh{ vertices, indices, textures });
     }
 };

@@ -24,12 +24,6 @@ struct Texture
     std::string path;
 };
 
-class Model
-{
-public:
-    virtual void Draw(const Shader& shader) const = 0;
-};
-
 class Mesh
 {
 public:

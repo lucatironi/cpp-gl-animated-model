@@ -1,12 +1,10 @@
 // File: main.cpp
-#include "assimp/DefaultLogger.hpp"
 #include "cube_model.hpp"
 #include "fps_camera.hpp"
 #include "frustum_box.hpp"
-#include "mesh.hpp"
-#include "model.hpp"
 #include "plane_model.hpp"
 #include "shader.hpp"
+#include "skinned_model.hpp"
 #include "texture_2D.hpp"
 
 #include <glad/glad.h>

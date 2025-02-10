@@ -1,12 +1,11 @@
 #pragma once
 
-#include "mesh.hpp"
-#include "shader.hpp"
+#include "basic_model.hpp"
 
 #include <string>
 #include <vector>
 
-class PlaneModel : public Model
+class PlaneModel : public BasicModel
 {
 public:
     PlaneModel(const std::string& texturePath, float size = 1.0f)
@@ -19,12 +18,12 @@ public:
     {
         shader.Use();
         shader.SetBool("animated", false);
-        mesh->Draw(shader);
+        for (const auto& mesh : meshes)
+            mesh.Draw(shader);
     }
 
 private:
     float size;
-    std::unique_ptr<Mesh> mesh;
 
     void createMesh(const std::string& texturePath)
     {
@@ -44,6 +43,6 @@ private:
         };
 
         // Create the mesh
-        mesh = std::make_unique<Mesh>(vertices, indices, textures);
+        meshes.emplace_back(Mesh{ vertices, indices, textures });
     }
 };

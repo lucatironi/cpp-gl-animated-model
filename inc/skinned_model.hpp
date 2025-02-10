@@ -1,8 +1,6 @@
 #pragma once
 
-#include "mesh.hpp"
-#include "shader.hpp"
-#include "texture_2D.hpp"
+#include "basic_model.hpp"
 
 #include <glad/glad.h>
 #include <glm/glm.hpp>
@@ -35,7 +33,7 @@ static inline glm::mat4 GetGLMMat4(const aiMatrix4x4& from)
 static inline glm::vec3 GetGLMVec3(const aiVector3D& vec) { return glm::vec3(vec.x, vec.y, vec.z); }
 static inline glm::quat GetGLMQuat(const aiQuaternion& qat) { return glm::quat(qat.w, qat.x, qat.y, qat.z); }
 
-class SkinnedModel : public Model
+class SkinnedModel : public BasicModel
 {
 public:
     SkinnedModel(const std::string& path)
@@ -101,7 +99,6 @@ private:
     Assimp::Importer importer;
     const aiScene* scene;
     std::string directory;
-    std::vector<Mesh> meshes;
     std::vector<Texture> loadedTextures;
     std::map<std::string, unsigned int> boneMapping;
     std::vector<BoneMatrix> boneMatrices;
