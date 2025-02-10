@@ -22,32 +22,39 @@ const int MAX_BONES = 100;
 const int MAX_BONE_INFLUENCE = 4;
 uniform mat4 finalBonesMatrices[MAX_BONES];
 
+vec4 applyBoneTransform(vec4 pos)
+{
+    vec4 result = vec4(0.0f);
+    for (int i = 0; i < MAX_BONE_INFLUENCE; ++i)
+    {
+        if (aBoneIds[i] == -1)
+            continue;
+        if (aBoneIds[i] >= MAX_BONES)
+        {
+            result = pos;
+            break;
+        }
+        result += aWeights[i] * (finalBonesMatrices[aBoneIds[i]] * pos);
+    }
+    return result;
+}
+
 void main()
 {
     vec4 totalPosition = vec4(0.0);
     if (animated)
     {
-        for (int i = 0; i < MAX_BONE_INFLUENCE; ++i)
-        {
-            if (aBoneIds[i] == -1)
-                continue;
-            if (aBoneIds[i] >= MAX_BONES)
-            {
-                totalPosition = vec4(aPos, 1.0);
-                break;
-            }
-            vec4 localPosition = finalBonesMatrices[aBoneIds[i]] * vec4(aPos, 1.0);
-            totalPosition += localPosition * aWeights[i];
-        }
+        totalPosition = applyBoneTransform(vec4(aPos, 1.0f));
+        Normal = normalize(applyBoneTransform(vec4(aNormal, 0.0))).xyz;
     }
     else
     {
-        totalPosition = vec4(aPos, 1.0);
+        totalPosition = vec4(aPos, 1.0f);
+        Normal = mat3(transpose(inverse(model))) * aNormal; // Transform normals to world space
     }
 
     vec4 worldPos = model * totalPosition;
     FragPos = worldPos.xyz;
-    Normal = mat3(transpose(inverse(model))) * aNormal; // Transform normals to world space
     TexCoords = aTexCoords;
     FragPosLightSpace = lightSpaceMatrix * vec4(FragPos, 1.0);
 

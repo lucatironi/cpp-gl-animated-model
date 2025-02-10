@@ -423,7 +423,7 @@ void RenderQuad()
 
 std::vector<glm::vec3> GetFrustumCornersWorldSpace(const glm::mat4& viewProjMatrix)
 {
-    glm::mat4 inv = glm::inverse(viewProjMatrix);
+    const glm::mat4 inv = glm::inverse(viewProjMatrix);
     // Define the 8 corners in NDC space
     std::vector<glm::vec4> ndcCorners = {
         {-1.0f, -1.0f, -1.0f, 1.0f}, // Near Bottom Left
