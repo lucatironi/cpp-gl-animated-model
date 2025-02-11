@@ -13,12 +13,13 @@ set(SOURCE_FILES
 )
 
 set(HEADER_FILES
+    inc/basic_model.hpp
     inc/fps_camera.hpp
     inc/frustum_box.hpp
     inc/mesh.hpp
-    inc/model.hpp
     inc/plane_model.hpp
     inc/shader.hpp
+    inc/skinned_model.hpp
     inc/texture_2d.hpp
 )
 

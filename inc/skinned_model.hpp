@@ -62,8 +62,10 @@ public:
     void SetAnimation(unsigned int animation)
     {
         if (hasAnimations && animation >= 0 && animation < numAnimations)
+        {
             currentAnimation = animation;
             setAnimParams();
+        }
     }
 
     void SetBoneTransformations(Shader shader, float currentTime)
@@ -75,6 +77,30 @@ public:
             shader.Use();
             shader.SetBool("animated", hasAnimations);
             shader.SetMat4v("finalBonesMatrices", transforms);
+        }
+    }
+
+    void Debug()
+    {
+        BasicModel::Debug();
+
+        std::cout << "Skinned Model: \"" << path
+                  << "\", hasAnimations: " << (hasAnimations ? "yes" : "no")
+                  << ", numAnimations: " << numAnimations
+                  << ", bonesCount: " << bonesCount
+                  << ", meshes: " << meshes.size()
+                  << std::endl;
+
+        for (const auto& mesh : meshes)
+            for (const auto& texture : mesh.GetTextures())
+                std::cout << "Texture: " << texture.path << ", type: " << texture.type << std::endl;
+
+        for (unsigned int i = 0; i < numAnimations; ++i)
+        {
+            aiAnimation* animation = scene->mAnimations[i];
+            std::cout << "Animation: " << animation->mName.C_Str()
+                      << ", Duration: " << animation->mDuration
+                      << ", TicksPerSecond: " << animation->mTicksPerSecond  << std::endl;
         }
     }
 
@@ -96,6 +122,7 @@ private:
         }
     };
 
+    std::string path;
     Assimp::Importer importer;
     const aiScene* scene;
     std::string directory;
@@ -110,14 +137,15 @@ private:
     float ticksPerSecond;
     float animDuration;
 
-    void loadModel(const std::string& path)
+    void loadModel(const std::string& modelPath)
     {
-        const aiScene* pScene = importer.ReadFile(path,
+        const aiScene* pScene = importer.ReadFile(modelPath,
             aiProcessPreset_TargetRealtime_Fast | aiProcess_LimitBoneWeights | aiProcess_FlipUVs);
 
         if (!pScene || (pScene->mFlags & AI_SCENE_FLAGS_INCOMPLETE) || !pScene->mRootNode)
             throw std::runtime_error("ERROR::ASSIMP: " + std::string(importer.GetErrorString()));
 
+        path = modelPath;
         scene = pScene;
         directory = path.substr(0, path.find_last_of("/"));
         hasAnimations = scene->HasAnimations();
@@ -126,30 +154,13 @@ private:
         boneMatrices.reserve(100);
         processNode(scene->mRootNode);
         setAnimParams();
-
-        std::cout << "Loaded model \"" << path
-                  << "\", hasAnimations: " << (hasAnimations ? "yes" : "no")
-                  << ", numAnimations: " << numAnimations
-                  << ", bonesCount: " << bonesCount
-                  << ", meshes: " << meshes.size()
-                  << std::endl;
-
-        for (const auto& mesh : meshes)
-            for (const auto& texture : mesh.GetTextures())
-                std::cout << "Texture: " << texture.path << ", type: " << texture.type << std::endl;
-
-        for (unsigned int i = 0; i < numAnimations; ++i)
-        {
-            aiAnimation* animation = scene->mAnimations[i];
-            std::cout << "Animation: " << animation->mName.C_Str() << std::endl;
-        }
     }
 
     // Process a node recursively and convert it to meshes
     void processNode(aiNode* node)
     {
         for (unsigned int i = 0; i < node->mNumMeshes; ++i)
-            meshes.emplace_back(processMesh(scene->mMeshes[node->mMeshes[i]]));
+            AddMesh(processMesh(scene->mMeshes[node->mMeshes[i]]));
 
         for (unsigned int i = 0; i < node->mNumChildren; ++i)
             processNode(node->mChildren[i]);

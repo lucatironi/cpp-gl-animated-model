@@ -50,6 +50,13 @@ public:
 
     std::vector<Texture> GetTextures() const { return textures; }
 
+    void Debug() const
+    {
+        std::cout << "Vertices: " << vertices.size() << ", Indices: " << indices.size() << ", Textures: " << textures.size() << std::endl;
+        for (const auto& texture : textures)
+            std::cout << "Texture: " << texture.path << ", type: " << texture.type << std::endl;
+    }
+
 private:
     GLuint VAO, VBO, EBO; // Vertex Array Object, Vertex Buffer Object, Element Buffer Object
     std::vector<Vertex> vertices;

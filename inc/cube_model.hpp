@@ -78,6 +78,6 @@ private:
         };
 
         // Create the mesh
-        meshes.emplace_back(Mesh{ vertices, indices, textures });
+        AddMesh({ vertices, indices, textures });
     }
 };

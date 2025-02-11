@@ -29,7 +29,7 @@ glm::mat4 CalcLightSpaceMatrix(const glm::vec3& worldMin, const glm::vec3& world
 FPSCamera Camera;
 std::shared_ptr<CubeModel> Cube;
 std::shared_ptr<PlaneModel> Floor;
-std::unique_ptr<SkinnedModel> AnimatedModel;
+std::unique_ptr<SkinnedModel> SkinModel;
 
 bool FirstMouse = true;
 float LastX, LastY;
@@ -117,8 +117,9 @@ int main()
 
     Floor = std::make_shared<PlaneModel>("assets/texture_05.png", Settings.WorldSize);
     Cube = std::make_shared<CubeModel>("assets/texture_05.png");
-    AnimatedModel = std::make_unique<SkinnedModel>("assets/vanguard.glb");
-    AnimatedModel->SetAnimation(Settings.CurrentAnimation);
+    SkinModel = std::make_unique<SkinnedModel>("assets/vanguard.glb");
+    SkinModel->SetAnimation(Settings.CurrentAnimation);
+    SkinModel->Debug();
 
     Camera.Position = glm::vec3(0.0f, 2.0f, 2.0f);
     Camera.FOV = Settings.FOV;
@@ -310,8 +311,8 @@ void KeyCallback(GLFWwindow* window, int key, int /* scancode */, int action, in
         glfwSetWindowShouldClose(window, true);
     else if (key == GLFW_KEY_SPACE && action == GLFW_PRESS)
     {
-        Settings.CurrentAnimation = (Settings.CurrentAnimation + 1) % AnimatedModel->GetNumAnimations();
-        AnimatedModel->SetAnimation(Settings.CurrentAnimation);
+        Settings.CurrentAnimation = (Settings.CurrentAnimation + 1) % SkinModel->GetNumAnimations();
+        SkinModel->SetAnimation(Settings.CurrentAnimation);
     }
     else if (key == GLFW_KEY_P && action == GLFW_PRESS)
         Settings.Animate = !Settings.Animate;
@@ -382,12 +383,12 @@ void Render(const Shader& shader, float currentTime)
     Cube->Draw(shader);
 
     translationMatrix = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -1.0f));
-    rotationMatrix = glm::rotate(glm::mat4(1.0f), glm::radians(0.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+    rotationMatrix = glm::mat4(1.0f);
     scaleMatrix = glm::scale(glm::mat4(1.0f), glm::vec3(0.01f));
     modelMatrix = translationMatrix * rotationMatrix * scaleMatrix;
     shader.SetMat4("model", modelMatrix);
-    AnimatedModel->SetBoneTransformations(shader, Settings.Animate ? currentTime : 0.0f);
-    AnimatedModel->Draw(shader);
+    SkinModel->SetBoneTransformations(shader, Settings.Animate ? currentTime : 0.0f);
+    SkinModel->Draw(shader);
 }
 
 unsigned int quadVAO = 0;
