@@ -5,7 +5,6 @@
 #include "frustum_box.hpp"
 #include "plane_model.hpp"
 #include "shader.hpp"
-#include "skinned_model.hpp"
 #include "texture_2D.hpp"
 
 #include <glad/glad.h>
@@ -29,7 +28,6 @@ glm::mat4 CalcLightSpaceMatrix(const glm::vec3& worldMin, const glm::vec3& world
 FPSCamera Camera;
 std::shared_ptr<CubeModel> Cube;
 std::shared_ptr<PlaneModel> Floor;
-std::unique_ptr<SkinnedModel> SkinModel;
 std::unique_ptr<AnimatedModel> AnimModel;
 
 bool FirstMouse = true;
@@ -261,7 +259,7 @@ int main()
             defaultShader.Use();
             defaultShader.SetMat4("view", Camera.GetViewMatrix());
             defaultShader.SetVec3("cameraPos", Camera.Position);
-            shadowShader.SetBool("shadowPass", false);
+            defaultShader.SetBool("shadowPass", false);
             glActiveTexture(GL_TEXTURE3);
             glBindTexture(GL_TEXTURE_2D, depthMap);
             Render(defaultShader, currentTime);
