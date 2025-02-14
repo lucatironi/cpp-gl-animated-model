@@ -59,7 +59,7 @@ public:
             mesh.AddTexture({ Texture2D(texturePath), "texture_diffuse", texturePath });
     }
 
-    void SetAnimation(unsigned int animation)
+    void SetCurrentAnimation(unsigned int animation)
     {
         if (hasAnimations && animation >= 0 && animation < numAnimations)
         {
