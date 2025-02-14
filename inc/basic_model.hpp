@@ -17,6 +17,7 @@ public:
 
     void Debug() const
     {
+        std::cout << "Meshes:" << std::endl;
         for (const auto& mesh : meshes)
             mesh.Debug();
     }
