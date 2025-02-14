@@ -3,6 +3,7 @@
 #include "cube_model.hpp"
 #include "fps_camera.hpp"
 #include "frustum_box.hpp"
+#include "gltf_loader.hpp"
 #include "plane_model.hpp"
 #include "shader.hpp"
 #include "texture_2D.hpp"
