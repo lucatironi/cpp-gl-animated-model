@@ -1,4 +1,5 @@
 // File: main.cpp
+#include "animated_model.hpp"
 #include "cube_model.hpp"
 #include "fps_camera.hpp"
 #include "frustum_box.hpp"
@@ -11,7 +12,6 @@
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
 #include <glm/ext/matrix_transform.hpp>
-
 #include <memory>
 
 void FramebufferSizeCallback(GLFWwindow* window, int width, int height);
@@ -30,6 +30,7 @@ FPSCamera Camera;
 std::shared_ptr<CubeModel> Cube;
 std::shared_ptr<PlaneModel> Floor;
 std::unique_ptr<SkinnedModel> SkinModel;
+std::unique_ptr<AnimatedModel> AnimModel;
 
 bool FirstMouse = true;
 float LastX, LastY;
@@ -117,9 +118,10 @@ int main()
 
     Floor = std::make_shared<PlaneModel>("assets/texture_05.png", Settings.WorldSize);
     Cube = std::make_shared<CubeModel>("assets/texture_05.png");
-    SkinModel = std::make_unique<SkinnedModel>("assets/vanguard.glb");
-    SkinModel->SetAnimation(Settings.CurrentAnimation);
-    SkinModel->Debug();
+
+    AnimModel = std::make_unique<AnimatedModel>();
+    GLTFLoader::LoadFromGLTF("assets/vanguard.glb", *AnimModel);
+    AnimModel->SetCurrentAnimation(Settings.CurrentAnimation);
 
     Camera.Position = glm::vec3(0.0f, 2.0f, 2.0f);
     Camera.FOV = Settings.FOV;
@@ -219,6 +221,8 @@ int main()
 
         // update
         // ------
+        if (Settings.Animate)
+            AnimModel->UpdateAnimation(deltaTime);
 
         // render
         // ------
@@ -311,8 +315,8 @@ void KeyCallback(GLFWwindow* window, int key, int /* scancode */, int action, in
         glfwSetWindowShouldClose(window, true);
     else if (key == GLFW_KEY_SPACE && action == GLFW_PRESS)
     {
-        Settings.CurrentAnimation = (Settings.CurrentAnimation + 1) % SkinModel->GetNumAnimations();
-        SkinModel->SetAnimation(Settings.CurrentAnimation);
+        Settings.CurrentAnimation = (Settings.CurrentAnimation + 1) % AnimModel->GetNumAnimations();
+        AnimModel->SetCurrentAnimation(Settings.CurrentAnimation);
     }
     else if (key == GLFW_KEY_P && action == GLFW_PRESS)
         Settings.Animate = !Settings.Animate;
@@ -384,11 +388,11 @@ void Render(const Shader& shader, float currentTime)
 
     translationMatrix = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -1.0f));
     rotationMatrix = glm::mat4(1.0f);
-    scaleMatrix = glm::scale(glm::mat4(1.0f), glm::vec3(0.01f));
+    scaleMatrix = glm::mat4(1.0f);
     modelMatrix = translationMatrix * rotationMatrix * scaleMatrix;
     shader.SetMat4("model", modelMatrix);
-    SkinModel->SetBoneTransformations(shader, Settings.Animate ? currentTime : 0.0f);
-    SkinModel->Draw(shader);
+    AnimModel->SetBoneTransformations(shader);
+    AnimModel->Draw(shader);
 }
 
 unsigned int quadVAO = 0;
