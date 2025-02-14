@@ -66,3 +66,21 @@ FetchContent_MakeAvailable(stb)
 
 add_library(stb INTERFACE ${stb_SOURCE_DIR}/stb_image.h)
 target_include_directories(stb INTERFACE ${stb_SOURCE_DIR})
+
+# ozz-animation
+FetchContent_Declare(
+    ozz_animation
+    GIT_REPOSITORY https://github.com/guillaumeblanc/ozz-animation.git
+    GIT_TAG 0.16.0
+    GIT_PROGRESS TRUE
+    GIT_SHALLOW TRUE)
+
+set(ozz_build_tools OFF CACHE BOOL "" FORCE)
+set(ozz_build_fbx OFF CACHE BOOL "" FORCE)
+set(ozz_build_gltf OFF CACHE BOOL "" FORCE)
+set(ozz_build_samples OFF CACHE BOOL "" FORCE)
+set(ozz_build_howtos OFF CACHE BOOL "" FORCE)
+set(ozz_build_tests OFF CACHE BOOL "" FORCE)
+SET(ozz_build_postfix OFF CACHE BOOL "" FORCE)
+
+FetchContent_MakeAvailable(ozz_animation)

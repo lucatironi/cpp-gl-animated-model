@@ -13,6 +13,7 @@ set(SOURCE_FILES
 )
 
 set(HEADER_FILES
+    inc/animated_model.hpp
     inc/basic_model.hpp
     inc/fps_camera.hpp
     inc/frustum_box.hpp
@@ -46,4 +47,4 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
 )
 
 # Link External Libraries
-target_link_libraries(${PROJECT_NAME} PRIVATE glfw glad glm assimp stb)
+target_link_libraries(${PROJECT_NAME} PRIVATE glfw glad glm assimp stb ozz_animation_offline ozz_animation)
