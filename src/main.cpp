@@ -12,6 +12,7 @@
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
 #include <glm/ext/matrix_transform.hpp>
+
 #include <memory>
 
 void FramebufferSizeCallback(GLFWwindow* window, int width, int height);
@@ -20,7 +21,7 @@ void KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
 void CursorPosCallback(GLFWwindow* window, double xposIn, double yposIn);
 
 void ProcessInput(GLFWwindow* window, float deltaTime);
-void Render(const Shader& shader, float currentTime);
+void Render(const Shader& shader);
 
 void RenderQuad();
 std::vector<glm::vec3> GetFrustumCornersWorldSpace(const glm::mat4& viewProjMatrix);
@@ -236,7 +237,7 @@ int main()
             glCullFace(GL_FRONT);
             shadowShader.Use();
             shadowShader.SetBool("shadowPass", true);
-            Render(shadowShader, currentTime);
+            Render(shadowShader);
             glCullFace(GL_BACK);
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
@@ -263,7 +264,7 @@ int main()
             defaultShader.SetBool("shadowPass", false);
             glActiveTexture(GL_TEXTURE3);
             glBindTexture(GL_TEXTURE_2D, depthMap);
-            Render(defaultShader, currentTime);
+            Render(defaultShader);
         }
 
         if (Settings.DebugFrustum)
@@ -360,7 +361,7 @@ void ProcessInput(GLFWwindow* window, float deltaTime)
         Camera.Move(MOVE_RIGHT, deltaTime);
 }
 
-void Render(const Shader& shader, float currentTime)
+void Render(const Shader& shader)
 {
     glm::mat4 translationMatrix, rotationMatrix, scaleMatrix, modelMatrix;
 
