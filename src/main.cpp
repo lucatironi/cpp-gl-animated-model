@@ -12,6 +12,7 @@
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
 #include <glm/ext/matrix_transform.hpp>
+#include "ozz/base/memory/allocator.h"
 
 #include <memory>
 
@@ -120,7 +121,8 @@ int main()
     Cube = std::make_shared<CubeModel>("assets/texture_05.png");
 
     AnimModel = std::make_unique<AnimatedModel>();
-    GLTFLoader::LoadFromGLTF("assets/vanguard.glb", *AnimModel);
+    GLTFLoader& gltf = GLTFLoader::GetInstance();
+    gltf.LoadFromGLTF("assets/vanguard.glb", *AnimModel);
     AnimModel->SetCurrentAnimation(Settings.CurrentAnimation);
 
     Camera.Position = glm::vec3(0.0f, 2.0f, 2.0f);
@@ -165,7 +167,7 @@ int main()
 
     // configure depth map FBO
     // -----------------------
-    const unsigned int SHADOW_WIDTH = 2048, SHADOW_HEIGHT = 2048;
+    const unsigned int SHADOW_WIDTH = 1024, SHADOW_HEIGHT = 1024;
     unsigned int depthMapFBO;
     glGenFramebuffers(1, &depthMapFBO);
     // create depth texture
@@ -286,6 +288,9 @@ int main()
 
     // optional: de-allocate all resources once they've outlived their purpose:
     // ------------------------------------------------------------------------
+    AnimModel.reset();
+    Floor.reset();
+    Cube.reset();
 
     // glfw: terminate, clearing all previously allocated GLFW resources.
     // ------------------------------------------------------------------
@@ -372,7 +377,7 @@ void Render(const Shader& shader)
     shader.SetMat4("model", glm::mat4(1.0f));
     Floor->Draw(shader);
 
-    translationMatrix = glm::translate(glm::mat4(1.0f), glm::vec3(1.0f, 0.5f, 1.0f));
+    translationMatrix = glm::translate(glm::mat4(1.0f), glm::vec3(1.0f, 0.5f, 2.0f));
     rotationMatrix = glm::mat4(1.0f);
     scaleMatrix = glm::scale(glm::mat4(1.0f), glm::vec3(1.0f));
     modelMatrix = translationMatrix * rotationMatrix * scaleMatrix;
@@ -386,7 +391,7 @@ void Render(const Shader& shader)
     shader.SetMat4("model", modelMatrix);
     Cube->Draw(shader);
 
-    translationMatrix = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -1.0f));
+    translationMatrix = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, 0.0f));
     rotationMatrix = glm::mat4(1.0f);
     scaleMatrix = glm::mat4(1.0f);
     modelMatrix = translationMatrix * rotationMatrix * scaleMatrix;

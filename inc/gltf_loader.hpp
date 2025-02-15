@@ -2,6 +2,11 @@
 
 #include "animated_model.hpp"
 
+#include "ozz/animation/offline/raw_animation.h"
+#include "ozz/animation/offline/raw_skeleton.h"
+#include "ozz/animation/offline/animation_builder.h"
+#include "ozz/animation/offline/skeleton_builder.h"
+
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
@@ -13,21 +18,21 @@
 #include <string>
 #include <vector>
 
-namespace GLTFLoader
+class GLTFLoader
 {
-    constexpr unsigned int MAX_BONE_INFLUENCE = 4;
-    static std::string Directory;
-    static std::vector<Texture> CachedTextures;
+public:
+    // Get the instance of the singleton
+    static GLTFLoader& GetInstance()
+    {
+        static GLTFLoader instance;  // Guaranteed to be destroyed, and instantiated on first use
+        return instance;
+    }
 
     static inline glm::mat4 AiToGlmMat4(const aiMatrix4x4& from)
     {
         glm::mat4 to;
-        // the a,b,c,d in assimp is the row; the 1,2,3,4 is the column
-        to[0][0] = from.a1; to[1][0] = from.a2; to[2][0] = from.a3; to[3][0] = from.a4;
-        to[0][1] = from.b1; to[1][1] = from.b2; to[2][1] = from.b3; to[3][1] = from.b4;
-        to[0][2] = from.c1; to[1][2] = from.c2; to[2][2] = from.c3; to[3][2] = from.c4;
-        to[0][3] = from.d1; to[1][3] = from.d2; to[2][3] = from.d3; to[3][3] = from.d4;
-        return to;
+        memcpy(glm::value_ptr(to), &from, sizeof(glm::mat4));
+        return glm::transpose(to);
     }
     static inline glm::vec3 AiToGlmVec3(const aiVector3D& vec) { return glm::vec3(vec.x, vec.y, vec.z); }
     static inline glm::quat AiToGlmQuat(const aiQuaternion& qat) { return glm::quat(qat.w, qat.x, qat.y, qat.z); }
@@ -46,68 +51,57 @@ namespace GLTFLoader
         return ozzTransform;
     }
 
-    static std::vector<Texture> ExtractTextures(const aiScene* scene, aiMaterial* material, aiTextureType textureType, const std::string& typeName)
+    bool LoadFromGLTF(const std::string& path, AnimatedModel& model)
     {
-        std::vector<Texture> textures;
-        for (unsigned int i = 0; i < material->GetTextureCount(textureType); ++i)
+        Assimp::Importer importer;
+        importer.SetPropertyFloat(AI_CONFIG_GLOBAL_SCALE_FACTOR_KEY, 0.01f);
+        const aiScene* pScene = importer.ReadFile(path,
+            aiProcessPreset_TargetRealtime_Fast | aiProcess_GlobalScale | aiProcess_LimitBoneWeights | aiProcess_FlipUVs);
+
+        if (!pScene || (pScene->mFlags & AI_SCENE_FLAGS_INCOMPLETE) || !pScene->mRootNode)
+            throw std::runtime_error("ERROR::ASSIMP: " + std::string(importer.GetErrorString()));
+
+        directory = path.substr(0, path.find_last_of("/"));
+
+        std::vector<Joint> joints;
+        std::map<std::string, int> boneMap;
+
+        // Extract skeleton from gltfModel and set model.skeleton
+        if(!ExtractSkeleton(pScene, joints, boneMap, model))
         {
-            aiString textureFilename;
-            material->GetTexture(textureType, i, &textureFilename);
-
-            // check if texture was loaded before and if so, continue to next iteration: skip loading a new texture
-            bool skip = false;
-            for (unsigned int j = 0; j < CachedTextures.size(); ++j)
-            {
-                if (std::strcmp(CachedTextures[j].path.data(), textureFilename.C_Str()) == 0)
-                {
-                    textures.emplace_back(CachedTextures[j]);
-                    skip = true; // a texture with the same filepath has already been loaded, continue to next one. (optimization)
-                    break;
-                }
-            }
-
-            if (!skip) // if texture hasn't been loaded already, load it
-            {
-                Texture2D texture2D;
-                if (const auto& texture = scene->GetEmbeddedTexture(textureFilename.C_Str()))
-                    texture2D = Texture2D(reinterpret_cast<unsigned char*>(texture->pcData), texture->mWidth, texture->mHeight);
-                else
-                    texture2D = Texture2D(std::string(Directory + "/" + std::string(textureFilename.C_Str())));
-
-                Texture tex = { texture2D, typeName, std::string(textureFilename.C_Str()) };
-                textures.push_back(tex);
-                CachedTextures.push_back(tex);
-            }
+            std::cerr << "Error extracting skeleton from model \"" << path << "\"" << std::endl;
+            return false;
         }
-        return textures;
+        // Extract animations from gltfModel and populate model.animations
+        if(!ExtractAnimations(pScene, joints, boneMap, model))
+        {
+            std::cerr << "Error extracting animations from model \"" << path << "\"" << std::endl;
+            return false;
+        }
+        // Extract meshes from gltfModel and populate model.meshes
+        if(!ExtractMeshes(pScene, joints, boneMap, model))
+        {
+            std::cerr << "Error extracting meshes from model \"" << path << "\"" << std::endl;
+            return false;
+        }
+
+        importer.FreeScene();
+
+        return true;
     }
 
-    static void ExtractJoints(const aiNode* node, int parentIndex, std::vector<Joint>& joints, std::map<std::string, int>& boneMap)
-    {
-        int jointIndex = 0;
-        std::string boneName(node->mName.data);
-        if (boneMap.find(boneName) == boneMap.end())
-        {
-            jointIndex = static_cast<int>(boneMap.size());
-            boneMap[boneName] = jointIndex;
-        }
-        else
-            jointIndex = boneMap[boneName];
+private:
+    unsigned int MAX_BONE_INFLUENCE = 4;
+    std::string directory;
+    std::vector<Texture> cachedTextures;
 
-        // Store joint
-        joints.push_back({
-            .name           = boneName,
-            .parentIndex    = parentIndex,
-            .localTransform = AiToOzzTransform(node->mTransformation),
-            .invBindPose    = glm::mat4(1.0f)
-        });
+    // Private constructor to prevent external instantiation
+    GLTFLoader() {}
+    // Delete copy constructor and assignment operator to prevent copying
+    GLTFLoader(const GLTFLoader&) = delete;
+    GLTFLoader& operator=(const GLTFLoader&) = delete;
 
-        // Recursively process child nodes
-        for (unsigned int i = 0; i < node->mNumChildren; ++i)
-            ExtractJoints(node->mChildren[i], jointIndex, joints, boneMap);
-    }
-
-    static bool ExtractSkeleton(const aiScene* pScene, std::vector<Joint>& joints, std::map<std::string, int>& boneMap, AnimatedModel& model)
+    bool ExtractSkeleton(const aiScene* pScene, std::vector<Joint>& joints, std::map<std::string, int>& boneMap, AnimatedModel& model)
     {
         // Extract joints from gltfModel and populate model.joints
         ExtractJoints(pScene->mRootNode, -1, joints, boneMap);
@@ -150,12 +144,13 @@ namespace GLTFLoader
             return false;
         }
 
-        model.SetSkeleton(rawSkeleton);
+        ozz::animation::offline::SkeletonBuilder skelBuilder;
+        model.SetSkeleton(std::move(skelBuilder(rawSkeleton)));
 
         return true;
     }
 
-    static bool ExtractAnimations(const aiScene* scene, std::vector<Joint>& joints, const std::map<std::string, int>& boneMap, AnimatedModel& model)
+    bool ExtractAnimations(const aiScene* scene, std::vector<Joint>& joints, const std::map<std::string, int>& boneMap, AnimatedModel& model)
     {
         if (!scene->HasAnimations())
         {
@@ -181,6 +176,10 @@ namespace GLTFLoader
 
                 int jointIndex = it->second;
                 auto& track = rawAnimation.tracks[jointIndex];
+
+                track.translations.reserve(channel->mNumPositionKeys);
+                track.rotations.reserve(channel->mNumRotationKeys);
+                track.scales.reserve(channel->mNumScalingKeys);
 
                 // Translation Keys
                 for (unsigned int i = 0; i < channel->mNumPositionKeys; ++i)
@@ -219,13 +218,14 @@ namespace GLTFLoader
                 continue;
             }
 
-            model.AddAnimation(rawAnimation);
+            ozz::animation::offline::AnimationBuilder animBuilder;
+            model.AddAnimation(std::move(animBuilder(rawAnimation)));
         }
 
         return true;
     }
 
-    static bool ExtractMeshes(const aiScene* scene, std::vector<Joint>& joints, std::map<std::string, int>& boneMap, AnimatedModel& model)
+    bool ExtractMeshes(const aiScene* scene, std::vector<Joint>& joints, std::map<std::string, int>& boneMap, AnimatedModel& model)
     {
         for (unsigned int i = 0; i < scene->mNumMeshes; ++i)
         {
@@ -304,47 +304,71 @@ namespace GLTFLoader
                 textures.insert(textures.end(), normalTextures.begin(), normalTextures.end());
             }
 
-            model.AddMesh(Mesh(std::move(vertices), std::move(indices), std::move(textures)));
+            model.AddMesh({ std::move(vertices), std::move(indices), std::move(textures) });
             model.SetJoints(joints);
         }
 
         return true;
     }
 
-    static bool LoadFromGLTF(const std::string& path, AnimatedModel& model)
+    void ExtractJoints(const aiNode* node, int parentIndex, std::vector<Joint>& joints, std::map<std::string, int>& boneMap)
     {
-        Assimp::Importer importer;
-        importer.SetPropertyFloat(AI_CONFIG_GLOBAL_SCALE_FACTOR_KEY, 0.01f);
-        const aiScene* pScene = importer.ReadFile(path,
-            aiProcessPreset_TargetRealtime_Fast | aiProcess_GlobalScale | aiProcess_LimitBoneWeights | aiProcess_FlipUVs);
-
-        if (!pScene || (pScene->mFlags & AI_SCENE_FLAGS_INCOMPLETE) || !pScene->mRootNode)
-            throw std::runtime_error("ERROR::ASSIMP: " + std::string(importer.GetErrorString()));
-
-        Directory = path.substr(0, path.find_last_of("/"));
-
-        std::vector<Joint> joints;
-        std::map<std::string, int> boneMap;
-
-        // Extract skeleton from gltfModel and set model.skeleton
-        if(!ExtractSkeleton(pScene, joints, boneMap, model))
+        int jointIndex = 0;
+        std::string boneName(node->mName.data);
+        if (boneMap.find(boneName) == boneMap.end())
         {
-            std::cerr << "Error extracting skeleton from model \"" << path << "\"" << std::endl;
-            return false;
+            jointIndex = static_cast<int>(boneMap.size());
+            boneMap[boneName] = jointIndex;
         }
-        // Extract animations from gltfModel and populate model.animations
-        if(!ExtractAnimations(pScene, joints, boneMap, model))
-        {
-            std::cerr << "Error extracting animations from model \"" << path << "\"" << std::endl;
-            return false;
-        }
-        // Extract meshes from gltfModel and populate model.meshes
-        if(!ExtractMeshes(pScene, joints, boneMap, model))
-        {
-            std::cerr << "Error extracting meshes from model \"" << path << "\"" << std::endl;
-            return false;
-        }
+        else
+            jointIndex = boneMap[boneName];
 
-        return true;
+        // Store joint
+        joints.push_back({
+            .name           = boneName,
+            .parentIndex    = parentIndex,
+            .localTransform = AiToOzzTransform(node->mTransformation),
+            .invBindPose    = glm::mat4(1.0f)
+        });
+
+        // Recursively process child nodes
+        for (unsigned int i = 0; i < node->mNumChildren; ++i)
+            ExtractJoints(node->mChildren[i], jointIndex, joints, boneMap);
+    }
+
+    std::vector<Texture> ExtractTextures(const aiScene* scene, aiMaterial* material, aiTextureType textureType, const std::string& typeName)
+    {
+        std::vector<Texture> textures;
+        for (unsigned int i = 0; i < material->GetTextureCount(textureType); ++i)
+        {
+            aiString textureFilename;
+            material->GetTexture(textureType, i, &textureFilename);
+
+            // check if texture was loaded before and if so, continue to next iteration: skip loading a new texture
+            bool skip = false;
+            for (unsigned int j = 0; j < cachedTextures.size(); ++j)
+            {
+                if (std::strcmp(cachedTextures[j].path.data(), textureFilename.C_Str()) == 0)
+                {
+                    textures.emplace_back(cachedTextures[j]);
+                    skip = true; // a texture with the same filepath has already been loaded, continue to next one. (optimization)
+                    break;
+                }
+            }
+
+            if (!skip) // if texture hasn't been loaded already, load it
+            {
+                Texture2D texture2D;
+                if (const auto& texture = scene->GetEmbeddedTexture(textureFilename.C_Str()))
+                    texture2D = Texture2D(reinterpret_cast<unsigned char*>(texture->pcData), texture->mWidth, texture->mHeight);
+                else
+                    texture2D = Texture2D(std::string(directory + "/" + std::string(textureFilename.C_Str())));
+
+                Texture tex = { texture2D, typeName, std::string(textureFilename.C_Str()) };
+                textures.push_back(tex);
+                cachedTextures.push_back(tex);
+            }
+        }
+        return textures;
     }
 };
