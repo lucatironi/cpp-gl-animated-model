@@ -8,6 +8,7 @@
 #include <assimp/matrix4x4.h>
 
 #include <iostream>
+#include <functional>
 #include <map>
 #include <string>
 #include <vector>
