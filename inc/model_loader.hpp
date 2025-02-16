@@ -18,13 +18,13 @@
 #include <string>
 #include <vector>
 
-class GLTFLoader
+class ModelLoader
 {
 public:
     // Get the instance of the singleton
-    static GLTFLoader& GetInstance()
+    static ModelLoader& GetInstance()
     {
-        static GLTFLoader instance;  // Guaranteed to be destroyed, and instantiated on first use
+        static ModelLoader instance;  // Guaranteed to be destroyed, and instantiated on first use
         return instance;
     }
 
@@ -51,7 +51,7 @@ public:
         return ozzTransform;
     }
 
-    bool LoadFromGLTF(const std::string& path, AnimatedModel& model)
+    bool LoadFromFile(const std::string& path, AnimatedModel& model)
     {
         Assimp::Importer importer;
         importer.SetPropertyFloat(AI_CONFIG_GLOBAL_SCALE_FACTOR_KEY, 0.01f);
@@ -96,10 +96,10 @@ private:
     std::vector<Texture> cachedTextures;
 
     // Private constructor to prevent external instantiation
-    GLTFLoader() {}
+    ModelLoader() {}
     // Delete copy constructor and assignment operator to prevent copying
-    GLTFLoader(const GLTFLoader&) = delete;
-    GLTFLoader& operator=(const GLTFLoader&) = delete;
+    ModelLoader(const ModelLoader&) = delete;
+    ModelLoader& operator=(const ModelLoader&) = delete;
 
     bool ExtractSkeleton(const aiScene* pScene, std::vector<Joint>& joints, std::map<std::string, int>& boneMap, AnimatedModel& model)
     {

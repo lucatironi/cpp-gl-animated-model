@@ -18,6 +18,7 @@ set(HEADER_FILES
     inc/fps_camera.hpp
     inc/frustum_box.hpp
     inc/mesh.hpp
+    inc/model_loader.hpp
     inc/plane_model.hpp
     inc/shader.hpp
     inc/skinned_model.hpp

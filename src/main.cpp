@@ -3,7 +3,7 @@
 #include "cube_model.hpp"
 #include "fps_camera.hpp"
 #include "frustum_box.hpp"
-#include "gltf_loader.hpp"
+#include "model_loader.hpp"
 #include "plane_model.hpp"
 #include "shader.hpp"
 #include "texture_2D.hpp"
@@ -120,8 +120,8 @@ int main()
     Cube = std::make_shared<CubeModel>("assets/texture_05.png");
 
     AnimModel = std::make_unique<AnimatedModel>();
-    GLTFLoader& gltf = GLTFLoader::GetInstance();
-    gltf.LoadFromGLTF("assets/vanguard.glb", *AnimModel);
+    ModelLoader& gltf = ModelLoader::GetInstance();
+    gltf.LoadFromFile("assets/vanguard.glb", *AnimModel);
     AnimModel->SetCurrentAnimation(Settings.CurrentAnimation);
 
     Camera.Position = glm::vec3(0.0f, 2.0f, 2.0f);
