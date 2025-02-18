@@ -67,19 +67,19 @@ public:
         std::map<std::string, int> boneMap;
 
         // Extract skeleton from gltfModel and set model.skeleton
-        if(!ExtractSkeleton(pScene, joints, boneMap, model))
+        if (!ExtractSkeleton(pScene, joints, boneMap, model))
         {
             std::cerr << "Error extracting skeleton from model \"" << path << "\"" << std::endl;
             return false;
         }
         // Extract animations from gltfModel and populate model.animations
-        if(!ExtractAnimations(pScene, joints, boneMap, model))
+        if (!ExtractAnimations(pScene, joints, boneMap, model))
         {
             std::cerr << "Error extracting animations from model \"" << path << "\"" << std::endl;
             return false;
         }
         // Extract meshes from gltfModel and populate model.meshes
-        if(!ExtractMeshes(pScene, joints, boneMap, model))
+        if (!ExtractMeshes(pScene, joints, boneMap, model))
         {
             std::cerr << "Error extracting meshes from model \"" << path << "\"" << std::endl;
             return false;
@@ -106,7 +106,7 @@ private:
         // Extract joints from gltfModel and populate model.joints
         ExtractJoints(pScene->mRootNode, -1, joints, boneMap);
 
-        if(joints.empty())
+        if (joints.empty())
         {
             std::cerr << "Failed to extract joints" << std::endl;
             return false;
