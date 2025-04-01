@@ -17,6 +17,9 @@ uniform mat4 projection;
 uniform mat4 lightSpaceMatrix;
 uniform bool shadowPass;
 
+uniform bool multiMesh;
+uniform mat4 meshModel;
+
 uniform bool animated;
 const int MAX_BONES = 100;
 const int MAX_BONE_INFLUENCE = 4;
@@ -49,7 +52,10 @@ void main()
     }
     else
     {
-        totalPosition = vec4(aPos, 1.0f);
+        if (multiMesh)
+            totalPosition = meshModel * vec4(aPos, 1.0f);
+        else
+            totalPosition = vec4(aPos, 1.0f);
         Normal = mat3(transpose(inverse(model))) * aNormal; // Transform normals to world space
     }
 

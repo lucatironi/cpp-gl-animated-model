@@ -68,15 +68,21 @@ public:
         }
     }
 
-    void SetBoneTransformations(Shader shader, float currentTime)
+    void UpdateAnimation(float deltaTime)
+    {
+        if (hasAnimations)
+            sampleAnimation(deltaTime);
+    }
+
+    void SetBoneTransformations(Shader shader)
     {
         if (hasAnimations)
         {
-            std::vector<glm::mat4> transforms;
-            boneTransform(currentTime, transforms);
+            // std::vector<glm::mat4> transforms;
+            // boneTransform(currentTime, transforms);
             shader.Use();
             shader.SetBool("animated", hasAnimations);
-            shader.SetMat4v("finalBonesMatrices", transforms);
+            shader.SetMat4v("finalBonesMatrices", boneTransforms);
         }
     }
 
@@ -129,6 +135,7 @@ private:
     std::vector<Texture> loadedTextures;
     std::map<std::string, unsigned int> boneMapping;
     std::vector<BoneMatrix> boneMatrices;
+    std::vector<glm::mat4> boneTransforms;
     unsigned int bonesCount;
     glm::mat4 globalInverseTransform;
     bool hasAnimations;
@@ -245,6 +252,21 @@ private:
         }
 
         return Mesh(std::move(vertices), std::move(indices), std::move(textures));
+    }
+
+    void sampleAnimation(float deltaTime)
+    {
+        static float animationTime = 0.0f;
+        animationTime += deltaTime; // Advance animation time
+
+        // Wrap around animation time if it exceeds duration
+        if (animationTime > animDuration / ticksPerSecond)
+            animationTime = fmod(animationTime, animDuration / ticksPerSecond);
+
+        readNodeHeirarchy(animationTime, scene->mRootNode, glm::mat4(1.0f));
+
+        for (unsigned int i = 0; i < bonesCount; ++i)
+            boneTransforms[i] = boneMatrices[i].FinalTransformation;
     }
 
     void boneTransform(float timeInSeconds, std::vector<glm::mat4>& transforms)

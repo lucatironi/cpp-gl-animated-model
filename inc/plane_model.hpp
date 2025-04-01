@@ -18,6 +18,7 @@ public:
     {
         shader.Use();
         shader.SetBool("animated", false);
+        shader.SetBool("multiMesh", false);
         for (const auto& mesh : meshes)
             mesh.Draw(shader);
     }

@@ -121,7 +121,7 @@ int main()
 
     AnimModel = std::make_unique<AnimatedModel>();
     ModelLoader& gltf = ModelLoader::GetInstance();
-    gltf.LoadFromFile("assets/vanguard.glb", *AnimModel);
+    gltf.LoadFromFile("assets/suv.glb", *AnimModel);
     AnimModel->SetCurrentAnimation(Settings.CurrentAnimation);
 
     Camera.Position = glm::vec3(0.0f, 2.0f, 2.0f);
@@ -376,19 +376,19 @@ void Render(const Shader& shader)
     shader.SetMat4("model", glm::mat4(1.0f));
     Floor->Draw(shader);
 
-    translationMatrix = glm::translate(glm::mat4(1.0f), glm::vec3(1.0f, 0.5f, 2.0f));
-    rotationMatrix = glm::mat4(1.0f);
-    scaleMatrix = glm::scale(glm::mat4(1.0f), glm::vec3(1.0f));
-    modelMatrix = translationMatrix * rotationMatrix * scaleMatrix;
-    shader.SetMat4("model", modelMatrix);
-    Cube->Draw(shader);
+    // translationMatrix = glm::translate(glm::mat4(1.0f), glm::vec3(1.0f, 0.5f, 2.0f));
+    // rotationMatrix = glm::mat4(1.0f);
+    // scaleMatrix = glm::scale(glm::mat4(1.0f), glm::vec3(1.0f));
+    // modelMatrix = translationMatrix * rotationMatrix * scaleMatrix;
+    // shader.SetMat4("model", modelMatrix);
+    // Cube->Draw(shader);
 
-    translationMatrix = glm::translate(glm::mat4(1.0f), glm::vec3(-1.0f, 1.0f, -3.0f));
-    rotationMatrix = glm::mat4(1.0f);
-    scaleMatrix = glm::scale(glm::mat4(1.0f), glm::vec3(2.0f));
-    modelMatrix = translationMatrix * rotationMatrix * scaleMatrix;
-    shader.SetMat4("model", modelMatrix);
-    Cube->Draw(shader);
+    // translationMatrix = glm::translate(glm::mat4(1.0f), glm::vec3(-1.0f, 1.0f, -3.0f));
+    // rotationMatrix = glm::mat4(1.0f);
+    // scaleMatrix = glm::scale(glm::mat4(1.0f), glm::vec3(2.0f));
+    // modelMatrix = translationMatrix * rotationMatrix * scaleMatrix;
+    // shader.SetMat4("model", modelMatrix);
+    // Cube->Draw(shader);
 
     translationMatrix = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, 0.0f));
     rotationMatrix = glm::mat4(1.0f);

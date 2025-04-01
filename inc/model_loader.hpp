@@ -15,6 +15,7 @@
 #include <iostream>
 #include <functional>
 #include <map>
+#include <ostream>
 #include <string>
 #include <vector>
 
@@ -54,7 +55,7 @@ public:
     bool LoadFromFile(const std::string& path, AnimatedModel& model)
     {
         Assimp::Importer importer;
-        importer.SetPropertyFloat(AI_CONFIG_GLOBAL_SCALE_FACTOR_KEY, 0.01f);
+        importer.SetPropertyFloat(AI_CONFIG_GLOBAL_SCALE_FACTOR_KEY, 1.0f);
         const aiScene* pScene = importer.ReadFile(path,
             aiProcessPreset_TargetRealtime_Fast | aiProcess_GlobalScale | aiProcess_LimitBoneWeights | aiProcess_FlipUVs);
 
@@ -68,22 +69,13 @@ public:
 
         // Extract skeleton from gltfModel and set model.skeleton
         if (!ExtractSkeleton(pScene, joints, boneMap, model))
-        {
             std::cerr << "Error extracting skeleton from model \"" << path << "\"" << std::endl;
-            return false;
-        }
         // Extract animations from gltfModel and populate model.animations
-        if (!ExtractAnimations(pScene, joints, boneMap, model))
-        {
+        if (pScene->HasAnimations() && !ExtractAnimations(pScene, joints, boneMap, model))
             std::cerr << "Error extracting animations from model \"" << path << "\"" << std::endl;
-            return false;
-        }
         // Extract meshes from gltfModel and populate model.meshes
-        if (!ExtractMeshes(pScene, joints, boneMap, model))
-        {
+        if (pScene->HasMeshes() && !ExtractMeshes(pScene, joints, boneMap, model))
             std::cerr << "Error extracting meshes from model \"" << path << "\"" << std::endl;
-            return false;
-        }
 
         importer.FreeScene();
 
