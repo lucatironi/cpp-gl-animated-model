@@ -143,7 +143,7 @@ int main()
 
     Shader defaultShader("shaders/default.vs", "shaders/default.fs");
     defaultShader.Use();
-    defaultShader.SetMat4("projection", Camera.GetProjectionMatrix());
+    defaultShader.SetMat4("projectionMatrix", Camera.GetProjectionMatrix());
     defaultShader.SetMat4("lightSpaceMatrix", lightViewSpaceMatrix);
     defaultShader.SetVec3("lightDir", Settings.LightDir);
     defaultShader.SetVec3("lightColor", Settings.LightColor);
@@ -163,7 +163,7 @@ int main()
 
     Shader lineShader("shaders/line.vs", "shaders/line.fs");
     lineShader.Use();
-    lineShader.SetMat4("projection", Camera.GetProjectionMatrix());
+    lineShader.SetMat4("projectionMatrix", Camera.GetProjectionMatrix());
 
     // configure depth map FBO
     // -----------------------
@@ -261,7 +261,7 @@ int main()
         else
         {
             defaultShader.Use();
-            defaultShader.SetMat4("view", Camera.GetViewMatrix());
+            defaultShader.SetMat4("viewMatrix", Camera.GetViewMatrix());
             defaultShader.SetVec3("cameraPos", Camera.Position);
             defaultShader.SetBool("shadowPass", false);
             glActiveTexture(GL_TEXTURE3);
@@ -272,7 +272,7 @@ int main()
         if (Settings.DebugFrustum)
         {
             lineShader.Use();
-            lineShader.SetMat4("view", Camera.GetViewMatrix());
+            lineShader.SetMat4("viewMatrix", Camera.GetViewMatrix());
             lightSpaceFrustum.Draw(lineShader);
             worldFrustum.Draw(lineShader);
         }
@@ -371,31 +371,35 @@ void Render(const Shader& shader)
     glm::mat4 translationMatrix, rotationMatrix, scaleMatrix, modelMatrix;
 
     shader.Use();
-    shader.SetMat4("view", Camera.GetViewMatrix());
+    shader.SetMat4("viewMatrix", Camera.GetViewMatrix());
     shader.SetVec3("cameraPos", Camera.Position);
 
-    shader.SetMat4("model", glm::mat4(1.0f));
+    shader.SetMat4("modelMatrix", glm::mat4(1.0f));
+    shader.SetMat3("normalMatrix", glm::mat3(1.0f));
     Floor->Draw(shader);
 
     translationMatrix = glm::translate(glm::mat4(1.0f), glm::vec3(1.0f, 0.5f, 2.0f));
     rotationMatrix = glm::mat4(1.0f);
     scaleMatrix = glm::scale(glm::mat4(1.0f), glm::vec3(1.0f));
     modelMatrix = translationMatrix * rotationMatrix * scaleMatrix;
-    shader.SetMat4("model", modelMatrix);
+    shader.SetMat4("modelMatrix", modelMatrix);
+    shader.SetMat3("normalMatrix", glm::transpose(glm::inverse(glm::mat3(modelMatrix))));
     Cube->Draw(shader);
 
     translationMatrix = glm::translate(glm::mat4(1.0f), glm::vec3(-1.0f, 1.0f, -3.0f));
     rotationMatrix = glm::mat4(1.0f);
     scaleMatrix = glm::scale(glm::mat4(1.0f), glm::vec3(2.0f));
     modelMatrix = translationMatrix * rotationMatrix * scaleMatrix;
-    shader.SetMat4("model", modelMatrix);
+    shader.SetMat4("modelMatrix", modelMatrix);
+    shader.SetMat3("normalMatrix", glm::transpose(glm::inverse(glm::mat3(modelMatrix))));
     Cube->Draw(shader);
 
     translationMatrix = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, 0.0f));
     rotationMatrix = glm::mat4(1.0f);
     scaleMatrix = glm::mat4(1.0f);
     modelMatrix = translationMatrix * rotationMatrix * scaleMatrix;
-    shader.SetMat4("model", modelMatrix);
+    shader.SetMat4("modelMatrix", modelMatrix);
+    shader.SetMat3("normalMatrix", glm::transpose(glm::inverse(glm::mat3(modelMatrix))));
     AnimModel->SetBoneTransformations(shader);
     AnimModel->Draw(shader);
 }

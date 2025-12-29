@@ -11,9 +11,10 @@ out vec3 Normal;
 out vec2 TexCoords;
 out vec4 FragPosLightSpace;
 
-uniform mat4 model;
-uniform mat4 view;
-uniform mat4 projection;
+uniform mat4 modelMatrix;
+uniform mat4 viewMatrix;
+uniform mat4 projectionMatrix;
+uniform mat3 normalMatrix;
 uniform mat4 lightSpaceMatrix;
 uniform bool shadowPass;
 
@@ -22,38 +23,39 @@ const int MAX_BONES = 100;
 const int MAX_BONE_INFLUENCE = 4;
 uniform mat4 finalBonesMatrices[MAX_BONES];
 
-vec4 applyBoneTransform(vec4 pos)
-{
-    vec4 result = vec4(0.0f);
-    for (int i = 0; i < MAX_BONE_INFLUENCE; ++i)
-    {
-        if (aBoneIds[i] == -1)
-            continue;
-        if (aBoneIds[i] >= MAX_BONES)
-        {
-            result = pos;
-            break;
-        }
-        result += aWeights[i] * (finalBonesMatrices[aBoneIds[i]] * pos);
-    }
-    return result;
-}
-
 void main()
 {
     vec4 totalPosition = vec4(0.0);
+    vec3 localNormal = vec3(0.0);
+
     if (animated)
     {
-        totalPosition = applyBoneTransform(vec4(aPos, 1.0f));
-        Normal = normalize(applyBoneTransform(vec4(aNormal, 0.0))).xyz;
+        // Calculate the single weighted bone matrix for THIS vertex
+        mat4 boneTransform = mat4(0.0);
+        for (int i = 0; i < MAX_BONE_INFLUENCE; ++i)
+        {
+            if (aBoneIds[i] == -1) continue;
+            if (aBoneIds[i] >= MAX_BONES) break;
+
+            boneTransform += finalBonesMatrices[aBoneIds[i]] * aWeights[i];
+        }
+
+        // Apply it to position
+        totalPosition = boneTransform * vec4(aPos, 1.0f);
+
+        // Apply it to normal (using mat3 to ignore translation)
+        localNormal = mat3(boneTransform) * aNormal;
+
+        // Final World Space Normal
+        Normal = normalize(normalMatrix * localNormal);
     }
     else
     {
         totalPosition = vec4(aPos, 1.0f);
-        Normal = mat3(transpose(inverse(model))) * aNormal; // Transform normals to world space
+        Normal = normalize(normalMatrix * aNormal);
     }
 
-    vec4 worldPos = model * totalPosition;
+    vec4 worldPos = modelMatrix * totalPosition;
     FragPos = worldPos.xyz;
     TexCoords = aTexCoords;
     FragPosLightSpace = lightSpaceMatrix * vec4(FragPos, 1.0);
@@ -61,5 +63,5 @@ void main()
     if (shadowPass)
         gl_Position = lightSpaceMatrix * worldPos;
     else
-        gl_Position = projection * view * worldPos;
+        gl_Position = projectionMatrix * viewMatrix * worldPos;
 }
