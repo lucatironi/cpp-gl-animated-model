@@ -8,7 +8,7 @@
 #include "shader.hpp"
 #include "texture_2D.hpp"
 
-#include <glad/glad.h>
+#include <glad/gl.h>
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
 #include <glm/ext/matrix_transform.hpp>
@@ -110,7 +110,8 @@ int main()
 
     // glad: load all OpenGL function pointers
     // ---------------------------------------
-    if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
+    int version = gladLoadGL(glfwGetProcAddress);
+    if (version == 0)
     {
         std::cerr << "ERROR::GLAD: Failed to initialize GLAD" << std::endl;
         return -1;
