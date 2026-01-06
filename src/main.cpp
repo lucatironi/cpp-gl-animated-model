@@ -123,7 +123,6 @@ int main()
     AnimModel = std::make_unique<AnimatedModel>();
     ModelLoader& gltf = ModelLoader::GetInstance();
     gltf.LoadFromFile("assets/vanguard.glb", *AnimModel);
-    AnimModel->SetCurrentAnimation(Settings.CurrentAnimation);
 
     Camera.Position = glm::vec3(0.0f, 2.0f, 2.0f);
     Camera.FOV = Settings.FOV;
@@ -320,8 +319,22 @@ void KeyCallback(GLFWwindow* window, int key, int /* scancode */, int action, in
         glfwSetWindowShouldClose(window, true);
     else if (key == GLFW_KEY_SPACE && action == GLFW_PRESS)
     {
+        // 1. Increment index
         Settings.CurrentAnimation = (Settings.CurrentAnimation + 1) % AnimModel->GetNumAnimations();
-        AnimModel->SetCurrentAnimation(Settings.CurrentAnimation);
+
+        // 2. Find the name associated with that index
+        std::string targetName = "";
+        for (auto const& [name, index] : AnimModel->GetAnimationList())
+        {
+            if (index == Settings.CurrentAnimation) {
+                targetName = name;
+                break;
+            }
+        }
+
+        // 3. Trigger the blend (0.5 seconds duration)
+        if (!targetName.empty()) {
+            AnimModel->PlayAnimation(targetName, 0.5f);
     }
     else if (key == GLFW_KEY_P && action == GLFW_PRESS)
         Settings.Animate = !Settings.Animate;
