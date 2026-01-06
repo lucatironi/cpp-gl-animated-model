@@ -7,6 +7,7 @@
 #include "ozz/animation/runtime/skeleton.h"
 #include "ozz/animation/runtime/sampling_job.h"
 #include "ozz/animation/runtime/local_to_model_job.h"
+#include "ozz/animation/runtime/blending_job.h"
 #include "ozz/base/maths/soa_transform.h"
 #include "ozz/base/memory/unique_ptr.h"
 
@@ -14,6 +15,7 @@
 #include <map>
 #include <string>
 #include <vector>
+#include <algorithm>
 
 using RuntimeSkeleton = ozz::unique_ptr<ozz::animation::Skeleton>;
 using RuntimeAnimation = ozz::unique_ptr<ozz::animation::Animation>;
@@ -26,7 +28,8 @@ struct Joint
     glm::mat4 invBindPose;
 };
 
-static inline glm::mat4 OzzToGlmMat4(const ozz::math::Float4x4& from) {
+static inline glm::mat4 OzzToGlmMat4(const ozz::math::Float4x4& from)
+{
     glm::mat4 to;
     memcpy(glm::value_ptr(to), &from.cols[0], sizeof(glm::mat4));
     return to;
@@ -50,92 +53,148 @@ public:
     {
         skeleton = std::move(skel);
         numJoints = skeleton->num_joints();
+        int numSoa = skeleton->num_soa_joints();
+
         jointMatrices.resize(numJoints);
+        currentLocal.resize(numSoa);
+        previousLocal.resize(numSoa);
+        blendedLocal.resize(numSoa);
+        modelSpaceTransforms.resize(numJoints);
+
+        // Both contexts must be resized to num_joints
+        context.Resize(numJoints);
+        previousContext.Resize(numJoints);
     }
 
     void AddAnimation(RuntimeAnimation animation)
     {
-        animationsMap[std::string(animation->name())] = animations.size();
+        animationsMap[std::string(animation->name())] = (unsigned int)animations.size();
         animations.emplace_back(std::move(animation));
     }
 
-    void SampleAnimation(float deltaTime, const ozz::animation::Animation& animation, ozz::animation::Skeleton& skeleton)
+    void SampleAnimation(float deltaTime)
     {
-        animationTime += deltaTime; // Advance animation time
-        // Wrap around animation time if it exceeds duration
-        if (animationTime > animation.duration())
-            animationTime = fmod(animationTime, animation.duration());
+        if (!skeleton || animations.empty()) return;
 
-        // Step 1: Sample animation
-        std::vector<ozz::math::SoaTransform> localTransforms(numJoints);
-        ozz::animation::SamplingJob samplingJob;
-        samplingJob.animation = &animation;
-        samplingJob.context = &context;
-        samplingJob.ratio = animationTime / animation.duration();
-        samplingJob.output = ozz::make_span(localTransforms);
+        // 1. Advance Times
+        animationTime += deltaTime;
+        if (animationTime > animations[currentAnimation]->duration())
+            animationTime = fmod(animationTime, animations[currentAnimation]->duration());
 
-        if (!samplingJob.Run())
-        {
-            std::cerr << "Failed to sample animation" << std::endl;
-            return;
+        if (isBlending) {
+            previousAnimationTime += deltaTime;
+            if (previousAnimationTime > animations[previousAnimation]->duration())
+                previousAnimationTime = fmod(previousAnimationTime, animations[previousAnimation]->duration());
+
+            blendWeight += deltaTime / blendDuration;
+            if (blendWeight >= 1.0f)
+            {
+                blendWeight = 1.0f;
+                isBlending = false;
+            }
         }
 
-        // Step 2: Convert to model space (world transform)
-        std::vector<ozz::math::Float4x4> modelSpaceTransforms(numJoints);
+        // 2. Sample Current (Use class member currentLocal)
+        ozz::animation::SamplingJob samplingCurrent;
+        samplingCurrent.animation = animations[currentAnimation].get();
+        samplingCurrent.context = &context;
+        samplingCurrent.ratio = animationTime / animations[currentAnimation]->duration();
+        samplingCurrent.output = ozz::make_span(currentLocal);
+        samplingCurrent.Run();
 
-        ozz::animation::LocalToModelJob localToModelJob;
-        localToModelJob.skeleton = &skeleton;
-        localToModelJob.input = ozz::make_span(localTransforms);
-        localToModelJob.output = ozz::make_span(modelSpaceTransforms);
-
-        if (!localToModelJob.Run())
+        if (isBlending)
         {
-            std::cerr << "Failed to convert local to model transforms" << std::endl;
-            std::fill(jointMatrices.begin(), jointMatrices.end(), glm::mat4(1.0f)); // Reset to identity
-            return;
+            // 1. Sample Previous Animation
+            ozz::animation::SamplingJob samplingPrevious;
+            samplingPrevious.animation = animations[previousAnimation].get();
+            samplingPrevious.context = &previousContext;
+            samplingPrevious.ratio = previousAnimationTime / animations[previousAnimation]->duration();
+            samplingPrevious.output = ozz::make_span(previousLocal);
+            if (!samplingPrevious.Run()) return;
+
+            float weight = std::clamp(blendWeight, 0.0f, 1.0f);
+            ozz::math::SimdFloat4 simdWeight = ozz::math::simd_float4::Load1(weight);
+            ozz::math::SimdFloat4 zero = ozz::math::simd_float4::zero();
+
+            for (size_t i = 0; i < currentLocal.size(); ++i)
+            {
+                // --- Translation ---
+                blendedLocal[i].translation.x = ozz::math::Lerp(previousLocal[i].translation.x, currentLocal[i].translation.x, simdWeight);
+                blendedLocal[i].translation.y = ozz::math::Lerp(previousLocal[i].translation.y, currentLocal[i].translation.y, simdWeight);
+                blendedLocal[i].translation.z = ozz::math::Lerp(previousLocal[i].translation.z, currentLocal[i].translation.z, simdWeight);
+
+                // --- Rotation (Hemisphere / Shortest Path Fix) ---
+                ozz::math::SimdFloat4 dot = ozz::math::Dot(previousLocal[i].rotation, currentLocal[i].rotation);
+
+                // CmpLt returns a mask (all 1s if true, all 0s if false)
+                ozz::math::SimdInt4 mask = ozz::math::CmpLt(dot, zero);
+
+                // If dot < 0, we negate the previous rotation to find the shortest path
+                ozz::math::SoaQuaternion correctedPrev;
+                correctedPrev.x = ozz::math::Select(mask, -previousLocal[i].rotation.x, previousLocal[i].rotation.x);
+                correctedPrev.y = ozz::math::Select(mask, -previousLocal[i].rotation.y, previousLocal[i].rotation.y);
+                correctedPrev.z = ozz::math::Select(mask, -previousLocal[i].rotation.z, previousLocal[i].rotation.z);
+                correctedPrev.w = ozz::math::Select(mask, -previousLocal[i].rotation.w, previousLocal[i].rotation.w);
+
+                blendedLocal[i].rotation = ozz::math::NLerp(correctedPrev, currentLocal[i].rotation, simdWeight);
+
+                // --- Scale ---
+                blendedLocal[i].scale.x = ozz::math::Lerp(previousLocal[i].scale.x, currentLocal[i].scale.x, simdWeight);
+                blendedLocal[i].scale.y = ozz::math::Lerp(previousLocal[i].scale.y, currentLocal[i].scale.y, simdWeight);
+                blendedLocal[i].scale.z = ozz::math::Lerp(previousLocal[i].scale.z, currentLocal[i].scale.z, simdWeight);
+            }
+        }
+        else
+        {
+            // No blend, just copy current to blended
+            std::copy(currentLocal.begin(), currentLocal.end(), blendedLocal.begin());
         }
 
-        // Step 3: Convert to glm::mat4 for GPU
-        for (size_t i = 0; i < modelSpaceTransforms.size(); ++i)
+        // 6. Local to Model Space
+        ozz::animation::LocalToModelJob ltmJob;
+        ltmJob.skeleton = skeleton.get();
+        ltmJob.input = ozz::make_span(blendedLocal);
+        ltmJob.output = ozz::make_span(modelSpaceTransforms);
+        ltmJob.Run();
+
+        // 7. Finalize for GPU
+        for (int i = 0; i < (int)numJoints; ++i)
+        {
             jointMatrices[i] = OzzToGlmMat4(modelSpaceTransforms[i]) * joints[i].invBindPose;
+        }
     }
 
     void UpdateAnimation(float deltaTime)
     {
         if (animations.empty() || !skeleton) return;
-        if (currentAnimation >= animations.size()) return; // Prevent out-of-bounds access
-        SampleAnimation(deltaTime, *animations[currentAnimation], *skeleton);
+        SampleAnimation(deltaTime);
+    }
+
+    void PlayAnimation(const std::string& animName, float duration = 0.2f)
+    {
+        auto it = animationsMap.find(animName);
+        if (it != animationsMap.end() && it->second != currentAnimation)
+        {
+            previousAnimation = currentAnimation;
+            previousAnimationTime = animationTime;
+            currentAnimation = it->second;
+            animationTime = 0.0f;
+            blendWeight = 0.0f;
+            blendDuration = duration;
+            isBlending = true;
+        }
     }
 
     void SetBoneTransformations(const Shader& shader)
     {
         shader.Use();
-        shader.SetBool("animated", HasAnimations());
-        if (HasAnimations())
+        shader.SetBool("animated", !animations.empty());
+        if (!animations.empty())
             shader.SetMat4v("finalBonesMatrices", jointMatrices);
     }
 
-    void SetCurrentAnimation(const std::string& animName)
-    {
-        auto it = animationsMap.find(animName);
-        if (it != animationsMap.end())
-        {
-            currentAnimation = it->second;
-            context.Resize(animations[currentAnimation]->num_tracks());
-        }
-    }
-
-    void SetCurrentAnimation(const unsigned int index)
-    {
-        if (index < animations.size())
-        {
-            currentAnimation = index;
-            context.Resize(animations[currentAnimation]->num_tracks());
-        }
-    }
-
     const bool HasAnimations() { return !animations.empty(); }
-    const unsigned int GetNumAnimations() { return animations.size(); }
+    const unsigned int GetNumAnimations() { return (unsigned int)animations.size(); }
     std::map<std::string, unsigned int>& GetAnimationList() { return animationsMap; }
 
     void Debug()
@@ -163,7 +222,19 @@ private:
     std::vector<RuntimeAnimation> animations;
     std::map<std::string, unsigned int> animationsMap;
     ozz::animation::SamplingJob::Context context;
-    unsigned int currentAnimation;
-    float animationTime;
+    ozz::animation::SamplingJob::Context previousContext;
+
+    unsigned int previousAnimation = 0;
+    unsigned int currentAnimation = 0;
+    float blendWeight = 1.0f;
+    float blendDuration = 0.5f;
+    bool isBlending = false;
+    float previousAnimationTime = 0.0f;
+    float animationTime = 0.0f;
+
     std::vector<glm::mat4> jointMatrices;
+    std::vector<ozz::math::SoaTransform> currentLocal;
+    std::vector<ozz::math::SoaTransform> previousLocal;
+    std::vector<ozz::math::SoaTransform> blendedLocal;
+    std::vector<ozz::math::Float4x4> modelSpaceTransforms;
 };
