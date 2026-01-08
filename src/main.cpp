@@ -121,8 +121,9 @@ int main()
     Cube = std::make_shared<CubeModel>("assets/texture_05.png");
 
     AnimModel = std::make_unique<AnimatedModel>();
-    ModelLoader& gltf = ModelLoader::GetInstance();
-    gltf.LoadFromFile("assets/vanguard.glb", *AnimModel);
+    ModelLoader& modelLoader = ModelLoader::GetInstance();
+    modelLoader.LoadFromFile("assets/vanguard.glb", *AnimModel);
+    AnimModel->Debug();
 
     Camera.Position = glm::vec3(0.0f, 2.0f, 2.0f);
     Camera.FOV = Settings.FOV;
@@ -333,8 +334,10 @@ void KeyCallback(GLFWwindow* window, int key, int /* scancode */, int action, in
         }
 
         // 3. Trigger the blend (0.5 seconds duration)
-        if (!targetName.empty()) {
+        if (!targetName.empty())
+        {
             AnimModel->PlayAnimation(targetName, 0.5f);
+        }
     }
     else if (key == GLFW_KEY_P && action == GLFW_PRESS)
         Settings.Animate = !Settings.Animate;
