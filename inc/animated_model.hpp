@@ -76,12 +76,13 @@ public:
     {
         if (!skeleton || animations.empty()) return;
 
-        // 1. Advance Times
+        // 1. Advance timelines
         animationTime += deltaTime;
         if (animationTime > animations[currentAnimation]->duration())
             animationTime = fmod(animationTime, animations[currentAnimation]->duration());
 
-        if (isBlending) {
+        if (isBlending)
+        {
             previousAnimationTime += deltaTime;
             if (previousAnimationTime > animations[previousAnimation]->duration())
                 previousAnimationTime = fmod(previousAnimationTime, animations[previousAnimation]->duration());
@@ -94,17 +95,17 @@ public:
             }
         }
 
-        // 2. Sample Current (Use class member currentLocal)
+        // 2. Sample Current
         ozz::animation::SamplingJob samplingCurrent;
         samplingCurrent.animation = animations[currentAnimation].get();
         samplingCurrent.context = &context;
         samplingCurrent.ratio = animationTime / animations[currentAnimation]->duration();
         samplingCurrent.output = ozz::make_span(currentLocal);
-        samplingCurrent.Run();
+        if (!samplingCurrent.Run()) return;
 
         if (isBlending)
         {
-            // 1. Sample Previous Animation
+            // 3. Sample Previous
             ozz::animation::SamplingJob samplingPrevious;
             samplingPrevious.animation = animations[previousAnimation].get();
             samplingPrevious.context = &previousContext;
@@ -112,52 +113,43 @@ public:
             samplingPrevious.output = ozz::make_span(previousLocal);
             if (!samplingPrevious.Run()) return;
 
-            float weight = std::clamp(blendWeight, 0.0f, 1.0f);
-            ozz::math::SimdFloat4 simdWeight = ozz::math::simd_float4::Load1(weight);
-            ozz::math::SimdFloat4 zero = ozz::math::simd_float4::zero();
+            // 4. Setup Blending Job
+            ozz::animation::BlendingJob blendJob;
 
-            for (size_t i = 0; i < currentLocal.size(); ++i)
+            // Use {} to value-initialize the layers (sets spans to empty/null)
+            ozz::animation::BlendingJob::Layer layers[2] = {};
+
+            layers[0].transform = ozz::make_span(previousLocal);
+            layers[0].weight = 1.0f - blendWeight;
+            // Do NOT touch layers[0].joint_weights; it is now a null span of the correct type
+
+            layers[1].transform = ozz::make_span(currentLocal);
+            layers[1].weight = blendWeight;
+            // Do NOT touch layers[1].joint_weights
+
+            blendJob.layers = ozz::make_span(layers);
+            blendJob.output = ozz::make_span(blendedLocal);
+            blendJob.rest_pose = skeleton->joint_rest_poses();
+
+            if (!blendJob.Run())
             {
-                // --- Translation ---
-                blendedLocal[i].translation.x = ozz::math::Lerp(previousLocal[i].translation.x, currentLocal[i].translation.x, simdWeight);
-                blendedLocal[i].translation.y = ozz::math::Lerp(previousLocal[i].translation.y, currentLocal[i].translation.y, simdWeight);
-                blendedLocal[i].translation.z = ozz::math::Lerp(previousLocal[i].translation.z, currentLocal[i].translation.z, simdWeight);
-
-                // --- Rotation (Hemisphere / Shortest Path Fix) ---
-                ozz::math::SimdFloat4 dot = ozz::math::Dot(previousLocal[i].rotation, currentLocal[i].rotation);
-
-                // CmpLt returns a mask (all 1s if true, all 0s if false)
-                ozz::math::SimdInt4 mask = ozz::math::CmpLt(dot, zero);
-
-                // If dot < 0, we negate the previous rotation to find the shortest path
-                ozz::math::SoaQuaternion correctedPrev;
-                correctedPrev.x = ozz::math::Select(mask, -previousLocal[i].rotation.x, previousLocal[i].rotation.x);
-                correctedPrev.y = ozz::math::Select(mask, -previousLocal[i].rotation.y, previousLocal[i].rotation.y);
-                correctedPrev.z = ozz::math::Select(mask, -previousLocal[i].rotation.z, previousLocal[i].rotation.z);
-                correctedPrev.w = ozz::math::Select(mask, -previousLocal[i].rotation.w, previousLocal[i].rotation.w);
-
-                blendedLocal[i].rotation = ozz::math::NLerp(correctedPrev, currentLocal[i].rotation, simdWeight);
-
-                // --- Scale ---
-                blendedLocal[i].scale.x = ozz::math::Lerp(previousLocal[i].scale.x, currentLocal[i].scale.x, simdWeight);
-                blendedLocal[i].scale.y = ozz::math::Lerp(previousLocal[i].scale.y, currentLocal[i].scale.y, simdWeight);
-                blendedLocal[i].scale.z = ozz::math::Lerp(previousLocal[i].scale.z, currentLocal[i].scale.z, simdWeight);
+                // If it fails, we fall back to current animation
+                std::copy(currentLocal.begin(), currentLocal.end(), blendedLocal.begin());
             }
         }
         else
         {
-            // No blend, just copy current to blended
             std::copy(currentLocal.begin(), currentLocal.end(), blendedLocal.begin());
         }
 
-        // 6. Local to Model Space
+        // 5. Local to Model Space
         ozz::animation::LocalToModelJob ltmJob;
         ltmJob.skeleton = skeleton.get();
         ltmJob.input = ozz::make_span(blendedLocal);
         ltmJob.output = ozz::make_span(modelSpaceTransforms);
         ltmJob.Run();
 
-        // 7. Finalize for GPU
+        // 6. Finalize for GPU
         for (int i = 0; i < (int)numJoints; ++i)
         {
             jointMatrices[i] = OzzToGlmMat4(modelSpaceTransforms[i]) * joints[i].invBindPose;
@@ -177,8 +169,17 @@ public:
         {
             previousAnimation = currentAnimation;
             previousAnimationTime = animationTime;
+
+            // --- PHASE SYNC START ---
+            // Calculate how far through the old animation we were (0.0 to 1.0)
+            float ratio = animationTime / animations[previousAnimation]->duration();
+
             currentAnimation = it->second;
-            animationTime = 0.0f;
+
+            // Start the new animation at the same relative spot
+            animationTime = ratio * animations[currentAnimation]->duration();
+            // --- PHASE SYNC END ---
+
             blendWeight = 0.0f;
             blendDuration = duration;
             isBlending = true;
@@ -196,6 +197,7 @@ public:
     const bool HasAnimations() { return !animations.empty(); }
     const unsigned int GetNumAnimations() { return (unsigned int)animations.size(); }
     std::map<std::string, unsigned int>& GetAnimationList() { return animationsMap; }
+    const ozz::animation::Skeleton& GetSkeleton() const { return *skeleton; }
 
     void Debug()
     {
